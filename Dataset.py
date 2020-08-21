@@ -4,7 +4,7 @@ from sklearn.model_selection import train_test_split
 import numpy as np
 import os.path as osp   
 
-from utils.processing import make_ptg_pophic_edge_index as make_index
+from utils.contacts.processing import make_ptg_pophic_edge_index as make_index
         
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
