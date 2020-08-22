@@ -1,5 +1,5 @@
 from scipy.sparse import coo_matrix
-from utils.file_io import load_npz_contacts as lnc
+from .file_io import load_npz_contacts as lnc
 from ..misc import one_hot, bp_to_idx, idx_to_bp
 
 
