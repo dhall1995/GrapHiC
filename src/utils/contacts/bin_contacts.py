@@ -20,7 +20,7 @@ PRINT_FREQ = 200000
 MIN_TRANS_COUNT = 5
 
 def bin_contacts(ncc_in, out_file=None, bin_size=DEFAULT_BIN_SIZE, format=DEFAULT_FORMAT,
-            min_bins=DEFAULT_MIN_BINS, min_trans=MIN_TRANS_COUNT, dtype=np.uint8, save = True):
+            min_bins=DEFAULT_MIN_BINS, min_trans=MIN_TRANS_COUNT, dtype=np.uint8):
   
     if not out_file:
         file_root, file_ext = os.path.splitext(ncc_in)
@@ -44,7 +44,7 @@ def bin_contacts(ncc_in, out_file=None, bin_size=DEFAULT_BIN_SIZE, format=DEFAUL
     get_min_bin = min_bin.get
     inf = float('inf')
   
-    t0 = time()
+    t0 = time.time()
   
     if format == 'NPZ':
         # Pre-read check to filter very small contigs
@@ -75,10 +75,10 @@ def bin_contacts(ncc_in, out_file=None, bin_size=DEFAULT_BIN_SIZE, format=DEFAUL
                     max_bin[chr_b] = bin_b
 
                 if i % PRINT_FREQ == 0:
-                    print("  Inspected {:,} lines, found {:,} chromosomes/contigs in {:.2f} s ".format(i, len(min_bin), time()-t0))
+                    print("  Inspected {:,} lines, found {:,} chromosomes/contigs in {:.2f} s ".format(i, len(min_bin), time.time()-t0))
     
             else:
-                print("  Inspected {:,} lines, found {:,} chromosomes/contigs in {:.2f} s ".format(i, len(min_bin), time()-t0))
+                print("  Inspected {:,} lines, found {:,} chromosomes/contigs in {:.2f} s ".format(i, len(min_bin), time.time()-t0))
         
                 for chromo in min_bin:
                     if (max_bin[chromo] - min_bin[chromo]) < min_bins:
@@ -148,7 +148,7 @@ def bin_contacts(ncc_in, out_file=None, bin_size=DEFAULT_BIN_SIZE, format=DEFAUL
          
           
                 if n_contacts % PRINT_FREQ == 0:
-                    print("  Processed {:,} contacts for {:,} chromosomes/contigs in {:.2f} s ".format(n_contacts, len(min_bin), time()-t0))
+                    print("  Processed {:,} contacts for {:,} chromosomes/contigs in {:.2f} s ".format(n_contacts, len(min_bin), time.time()-t0))
         
                 c = mat[bin_a, bin_b]
         
@@ -167,12 +167,10 @@ def bin_contacts(ncc_in, out_file=None, bin_size=DEFAULT_BIN_SIZE, format=DEFAUL
                 mat[bin_a, bin_b] = c + 1
                 counts[chromo_key] += 1
     
-        print("  Processed {:,} contacts for {:,} chromosomes/contigs in {:.2f} s ".format(n_contacts, len(min_bin), time()-t0))
-        
-        if not save:
-            return counts
+        print("  Processed {:,} contacts for {:,} chromosomes/contigs in {:.2f} s ".format(n_contacts, len(min_bin), time.time()-t0))
         
         print('Saving data')
+        
         contacts = {}
         n_exc_trans = 0
     
@@ -261,7 +259,8 @@ def bin_contacts(ncc_in, out_file=None, bin_size=DEFAULT_BIN_SIZE, format=DEFAUL
             contacts[chr_a] = np.array([min_a, a])
             contacts[chr_b] = np.array([min_b, b])
     
-        contacts['params'] = np.array([bin_size, min_bins])  
+        contacts['params'] = np.array([bin_size, min_bins])
+        
      
         np.savez_compressed(out_file, **contacts)    
   
@@ -321,7 +320,7 @@ def main(argv=None):
 
 if __name__ == '__main__':
   
-    from time import time
+    import time
   
     sys.path.append(os.path.dirname(os.path.dirname(__file__)))
   

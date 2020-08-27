@@ -2,9 +2,14 @@ import torch
 from torch_geometric.data import InMemoryDataset, Data
 from sklearn.model_selection import train_test_split
 import numpy as np
+import os
 import os.path as osp   
 
-from ..utils.contacts.processing import make_ptg_pophic_edge_index as make_index
+from .utils.contacts.processing import make_ptg_pophic_edge_index as make_index
+from .Datatrack import DataTrack_rvp as dtrvp
+from .Datatrack import DataTrack_bigwig as btbw
+
+CHROMS = [str(i+1) for i in np.arange(19)]
         
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -54,9 +59,9 @@ class pop_HiC_Dataset(InMemoryDataset):
     one-hot chromosome encoding.
      
     If the data has not been pre-processed then the constructor will search for the relevant files in:
-                {root}/data/{condition}/raw/
+                {root}/data/raw/
     and then construct the correct dataset object in:
-                {root}/data/{condition}/processed/
+                {root}/data/processed/
      
     NOTE: If you have previously constructed a dataset object but would like to include more features in some new dataset
            then you must delete the contents of:
@@ -67,10 +72,10 @@ class pop_HiC_Dataset(InMemoryDataset):
     '''
     def __init__(self,
                  root,
+                 contact_file = "sqrt_vc_normed_SLX-7671_haploid_50kb",
+                 target_file = "target.npz",
                  transform=None,
                  pre_transform=None,
-                 condition = 'SLX-7671_haploid',
-                 binSize = '50',
                  chrlims = None,
                  shape = None
                 ):
@@ -78,33 +83,44 @@ class pop_HiC_Dataset(InMemoryDataset):
         self.binSize = binSize
         self.chrlims = chrlims
         self.shape = shape
+        self.contact_file = contact_file
+        self.target_file = target_file
+        self.root = root
         
         self.condition = condition
         
-        super(pop_HiC_Dataset, self).__init__(root + "{}".format(self.condition), transform, pre_transform)
+        super(pop_HiC_Dataset, self).__init__(root, transform, pre_transform)
         self.data, self.slices = torch.load(self.processed_paths[0])
 
     @property
     def raw_file_names(self):
         print("Looking for files...")
-        return ['{}_{}kb.npz'.format(self.condition, self.binSize)]
+        return [self.contact_file + ".npz"]
 
     @property
     def processed_file_names(self):
-        return ['{}_{}kb_data.pt'.format(self.condition, int(self.binSize))]
+        return [self.contact_file + ".pt"]
 
     def download(self):
         pass
 
     def process(self): 
         #Retrieve contact information from contact npz file
-        self.shape, self.binSize, self.chrlims, edge_index, edge_attr = make_index(osp.join(self.raw_dir, '{}_{}kb.npz'.format(self.condition, self.binSize)))
+        self.shape, self.binSize, self.chrlims, edge_index, edge_attr = make_index(osp.join(self.raw_dir, self.contact_file))
+        
+        try:
+            if ".npz" in self.target_file:
+                tvals = bin_npz(self.target_file, self.chrlims, self.binSize, order = CHROMS)
+            elif ".bw" in self.target_file:
+                tvals = bin_bigwig(self.target_file, self.chrlims, self.binSize, order = CHROMS)
+        except:
+            print("Couldn't parse target file, proceeding with uniform ones")
+            #create dummy target
+            tvals = torch.ones(self.shape, dtype = torch.float)
         
         #Set up basic feature matrix - one-hot chromosome encoding and bp bin positions
         fmat = torch.empty(self.shape, 0, dtype=torch.float)
-
-        #create dummy target
-        tvals = torch.ones(self.shape, dtype = torch.float)
+        
         
         #create our dataset object
         data = Data(x = fmat, edge_index = edge_index, edge_attr = edge_attr, y = tvals)
@@ -128,3 +144,8 @@ class pop_HiC_Dataset(InMemoryDataset):
         torch.save((data, slices), self.processed_paths[0])
         
         return data
+
+'''
+class disconnected_Dataset(Object):
+    def __init__()
+'''

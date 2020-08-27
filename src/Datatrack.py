@@ -1,5 +1,5 @@
-from ..utils.datatracks.dtrack_utils import binrvps_constantbins, binrvps, pairRegionsIntersection, rvps_to_rvps, binrvps_multi_interval
-from ..utils.datatracks.file_io import rvps_from_bed, rvps_from_npz, rvps_to_npz
+from .utils.datatracks.dtrack_utils import binrvps_constantbins, binrvps, pairRegionsIntersection, rvps_to_rvps, binrvps_multi_interval
+from .utils.datatracks.file_io import rvps_from_bed, rvps_from_npz, rvps_to_npz
 import numpy as np
 import pandas as pd
 import pyBigWig as pBW
@@ -553,7 +553,7 @@ class DataTrack_rvp(DataTrack):
         rvps_to_npz(self.regions,
                     self.values,
                     name,
-                    outpath,
+                    out_path,
                     IDs = inputIDs,
                     params = inputparams)
         

@@ -7,8 +7,8 @@ TO DO:
 
 from scipy.sparse import coo_matrix
 from scipy import sparse
-import torch
-import pandas as pd
+from ..datatracks.dtrack_utils import non_overlapping, pairRegionsOverlap
+#import pandas as pd
 import math
 import numpy as np
 from numpy import int32
@@ -240,10 +240,10 @@ def process_ncc(ncc_file,
             if chrom2 not in chroms:
                 continue
                 
-            test_overlaps = dtu.non_overlapping(np.array([[start1, end1], [start2, end2]]).astype('int32'))
+            test_overlaps = non_overlapping(np.array([[start1, end1], [start2, end2]]).astype('int32'))
             if contact_region is not None:
-                contact_region = dtu.non_overlapping(contact_region)
-                test_overlaps = dtu.pairRegionsOverlap(test_overlaps, contact_region)
+                contact_region = non_overlapping(contact_region)
+                test_overlaps = pairRegionsOverlap(test_overlaps, contact_region)
             
             
             if len(test_overlaps) == 0 and chrom1 == chrom2:

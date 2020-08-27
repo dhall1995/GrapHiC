@@ -1,10 +1,3 @@
-'''
-TO DO:
-    - Write datatrack_to_bed function
-    - Fix datatrack_to_npz function
-    - Write bed_to_npz function
-''' 
-
 from scipy.sparse import coo_matrix
 from scipy import sparse
 import torch
@@ -12,7 +5,8 @@ import pandas as pd
 import math
 import numpy as np
 from numpy import int32
-       
+
+CHROMS = [str(i+1) for i in np.arange(19)] + ['X']
 
 ###################################################################
 def rvps_from_npz(file_path,
@@ -65,7 +59,6 @@ def rvps_from_npz(file_path,
     ID_dict = {}
     params = {}
     
-    chromosomes = [str(i+1) for i in np.arange(19)] + ['X']
     for key in data_archive:
         if key != 'params':
             null, key2, track_name, chromo = key.split('/')

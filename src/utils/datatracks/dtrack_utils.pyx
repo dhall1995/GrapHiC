@@ -6,7 +6,6 @@ from numpy import sort, empty, array, arange, concatenate, searchsorted
 from numpy import minimum, maximum,divide, std, mean
 from numpy import min as nmin
 from numpy import max as nmax
-import h5py as h
 
 
 
