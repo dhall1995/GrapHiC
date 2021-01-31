@@ -92,3 +92,62 @@ def bp_to_idx(bp, chrom, chr_lims, binSize):
             tot += (chr_lims[str(i)][1] - chr_lims[str(i)][0])/binSize
     
     return int(tot + chr_idx)
+
+def symlog(vec):
+    out = np.copy(vec)
+    
+    out[out>=1] = 1+np.log10(out[out>=1])
+    out[out<1] = out[out<1]
+    
+    return out
+
+def log_fold_change(vec1,vec2,
+                    abstolperc = 10,
+                    ftolperc = 90,
+                    log_ftolperc = 10
+                   ):
+    
+    vec1 = np.array(vec1)
+    vec2 = np.array(vec2)
+    
+    fchange = np.ones(vec1.shape)
+    
+    fchange[vec1 != 0] = np.divide(vec2[vec1!=0],vec1[vec1!=0])
+    
+    abschange = abs(vec2 - vec1)
+    posabschange = abschange[abschange > 0]
+    
+    if posabschange.shape[0] == 0:
+        return 0
+    
+    fchange[(vec1 == 0)&(abschange > np.percentile(posabschange, abstolperc))] = np.percentile(fchange, ftolperc)
+    
+    lfc = np.zeros(fchange.shape)
+    
+    lfc[fchange > 0] = np.log10(fchange[fchange>0])
+    
+    lfc[(fchange == 0)&(abschange > np.percentile(posabschange, abstolperc))] = np.percentile(lfc, log_ftolperc)
+    
+    return lfc
+
+def symlog_fold_change(vec1,vec2,
+                    abstolperc = 10,
+                    ftolperc = 90
+                   ):
+    
+    vec1 = np.array(vec1)
+    vec2 = np.array(vec2)
+    
+    fchange = np.ones(vec1.shape)
+    
+    fchange[vec1 != 0] = np.divide(vec2[vec1!=0],vec1[vec1!=0])
+    
+    abschange = abs(vec2 - vec1)
+    posabschange = abschange[abschange > 0]
+    
+    if posabschange.shape[0] == 0:
+        return 0
+    
+    fchange[(vec1 == 0)&(abschange > np.percentile(posabschange, abstolperc))] = np.percentile(fchange, ftolperc)
+    
+    return symlog(fchange)

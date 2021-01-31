@@ -57,6 +57,10 @@ if __name__ == "__main__":
                         default = "\t",
                         type = str,
                         help = "separation character between columns in the bed file(s)")
+    parser.add_argument("-p", "--binning_parameters", nargs = "+",
+                        default = [0,5],
+                        help = "Default binning parameters to use for the given files. When the generate .npz file is used to create a datatrack object and we wish to get some summary statistics on a region, these parameters control which summary statistics are returned. This should be a sequence of integers where integers correspond to different summary statistics:\n - 0 'mean': The mean datatrack value over basepairs in the region.\n- 1 'sum': The sum of datatrack values over basepairs in the region.\n- 2 'min': The minimum datatrack value over basepairs in the region.\n- 3 'max': The maximum datatrack value over basepairs in the region.\n- 4 'std': The standard deviation of  datatrack value over basepairs in the region.\n- 5 'coverage': The total number of basepairs with non-zero values in the reigon.\n- 6 'per_region_mean': The mean of the datatrack valuesover regions within our intervals. If there are no regions within an interval then it returns zero.\n- 7 'per_region_std': The standard deviation of the datatrack values over regions within our intervals. If there are no regions within an interval then it returns zero.\n- 8 'per_region_min': The min of the datatrack values over regions within our intervals. If there are no regions within an interval then it returns zero.\nDefaults to [1,5] i.e. sum and coverage."
+                       )
     
     args = parser.parse_args()
     
@@ -64,6 +68,8 @@ if __name__ == "__main__":
         args.filenames = os.listdir(args.directory)
 
     myfiles = [os.path.join(args.directory, file) for file in args.filenames]
+    
+    args.binning_paramters = np.array([int(item) for item in args.binning_parameters])
     
     for idx, file in enumerate(myfiles):
         print("processing file: {}".format(file))
@@ -77,9 +83,10 @@ if __name__ == "__main__":
                                                      header = args.header,
                                                      allowed_chroms = args.chromosomes,
                                                      sep = args.sep)
+        
+        dtrack.params = args.binning_parameters
         outname = os.path.join(args.outpath, stripped_name)
         print("\twriting to: {}".format(outname))
-        dtrack.to_npz(outname)
-        
+        dtrack.to_npz(outname, name = stripped_name)   
         
         

@@ -103,7 +103,7 @@ class DataTrack_rvp(DataTrack):
             self.IDs = IDs
             
         if params is None:    
-            self.params = {}
+            self.params = np.array([5]).astype(int)
         else:
             self.params = params
             
@@ -131,9 +131,12 @@ class DataTrack_rvp(DataTrack):
 
         '''
         mids = np.array(mids).astype('int32')
+        if chr_name not in self.regions:
+            return np.zeros((mids.shape[0],2*buffer))
         myvals = self.values[chr_name][:,0]
         if use_constant_val is not None:
             myvals = use_constant_val*np.ones(myvals.shape)
+            
         return binrvps_multi_interval(self.regions[chr_name],
                                       myvals,
                                       mids,
@@ -210,11 +213,16 @@ class DataTrack_rvp(DataTrack):
         elif stats_type == 'per_region_std':
             stats_type = 7
         elif stats_type == 'per_region_min':
-            stats_type = 8    
+            stats_type = 8
+        elif stats_type in [0,1,2,3,4,5,6,7,8]:
+            pass
         else:
             print("Unrecognised stats_type. Please pick from: 'mean','sum', 'max','min','std','coverage'")
             return None
         
+        if chr_name not in self.regions:
+            print("Cannot find {} in datatrack regions for {}. Returning zeros".format(chr_name, self.name))
+            return np.zeros(intervals.shape[0])
         regions = self.regions[chr_name]
         values = self.values[chr_name][:,0]
         
@@ -513,8 +521,10 @@ class DataTrack_rvp(DataTrack):
             - **kwargs: Extra arguments to be passed to io.load_data_track
         '''
         if params:
-            self.params = rvps_from_npz(npz_file, params = params)
+            self.params = rvps_from_npz(npz_file, params = params).astype(int)
             params = False
+        else:
+            self.params = np.array([5]).astype('int')
         
         regs, vals, IDs = rvps_from_npz(npz_file, **kwargs)
         
@@ -543,9 +553,7 @@ class DataTrack_rvp(DataTrack):
         if len(self.IDs.keys()) != 0:
             inputIDs = self.IDs
             
-        inputparams = None
-        if len(self.params.keys()) != 0:
-            inputparams = self.params
+        inputparams = self.params
             
         if name is None:
             name = self.name

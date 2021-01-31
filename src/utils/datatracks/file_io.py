@@ -2,6 +2,7 @@ from scipy.sparse import coo_matrix
 from scipy import sparse
 import torch
 import pandas as pd
+import itertools
 import math
 import numpy as np
 from numpy import int32
@@ -136,39 +137,33 @@ def rvps_from_bed(file_path,
     regions_dict = {}
     values_dict = {}
     ID_dict = {}
-    for idx in np.arange(x.values.shape[0]):
-        chrom = x.loc[idx][0]
-        if "chr" in chrom:
-            chrom = chrom[3:]
-        if chrom not in allowed_chroms:
-            continue
-            
-        start = x.loc[idx][region_cols[0]]
-        end = x.loc[idx][region_cols[1]]
-        if value_col is not None:
-            val = x.loc[idx][value_col]
-        else:
-            val = value_fill
-            
-        if ID_col is not None:
-            ID = x.loc[idx][ID_col]
     
-        if chrom not in regions_dict:
-            regions_dict[chrom] = [[start, end]]
-            values_dict[chrom] = [[val]]
-            if ID_col is not None:
-                ID_dict[chrom] = [[ID]]
+    per_chrom_regions = {k1: np.concatenate([item[None,[region_cols[0],region_cols[1]]] for item in list(g1)],axis = 0) for k1,g1 in itertools.groupby(sorted(x.values.astype('str'), key = lambda x:x[chrom_col]),lambda x: x[chrom_col])}
+    
+    if value_col is not None:
+        per_chrom_values = {k1: np.concatenate([item[None,[value_col]] for item in list(g1)],axis = 0) for k1,g1 in itertools.groupby(sorted(x.values.astype('str'), key = lambda x:x[chrom_col]),lambda x: x[chrom_col])}
+    else:
+        per_chrom_values = {k1: value_fill*np.ones((per_chrom_regions[k1].shape[0],1)) for k1 in per_chrom_regions}
+    
+    if ID_col is not None:
+        per_chrom_IDs = {k1: np.concatenate([item[None,[ID_col]] for item in list(g1)],axis = 0) for k1,g1 in itertools.groupby(sorted(x.values.astype('str'), key = lambda x:x[chrom_col]),lambda x: x[chrom_col])}
+    else:
+        per_chrom_IDs = None
+    
+    for k1 in per_chrom_regions:
+        if "chr" in str(k1):
+            k1_ = k1[3:]
         else:
-            regions_dict[chrom].append([start, end])
-            values_dict[chrom].append([val])
-            if ID_col is not None:
-                ID_dict[chrom].append([ID])
+            k1_ = k1
+            
+        if k1_ not in allowed_chroms:
+            continue
         
-    for key in regions_dict:
-        regions_dict[key] = np.array(regions_dict[key])
-        values_dict[key] = np.array(values_dict[key])
-        if ID_col is not None:
-            ID_dict[key] = np.array(ID_dict[key])
+        regions_dict[k1_] = per_chrom_regions[k1].astype('int32')
+        values_dict[k1_] = per_chrom_values[k1]
+        
+        if per_chrom_IDs is not None:
+            ID_dict[k1_] = per_chrom_IDs[k1]
             
     return regions_dict, values_dict, ID_dict
     
@@ -212,7 +207,7 @@ def rvps_to_npz(regions,
     if params is not None:
         outdict['params'] = params
         
-    np.savez(out_path, **outdict, allow_pickle = True)
+    np.savez(out_path, **outdict)
     
 ###################################################################
 def rvps_to_bed(regions,
