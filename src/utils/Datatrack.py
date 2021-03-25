@@ -1,5 +1,5 @@
-from .utils.dtrack_utils import binrvps_constantbins, binrvps, pairRegionsIntersection, rvps_to_rvps, binrvps_multi_interval
-from .utils.file_io import rvps_from_bed, rvps_from_npz, rvps_to_npz
+from .dtrack_utils import binrvps_constantbins, binrvps, pairRegionsIntersection, rvps_to_rvps, binrvps_multi_interval
+from .file_io import rvps_from_bed, rvps_from_npz, rvps_to_npz
 import numpy as np
 import pandas as pd
 import pyBigWig as pBW
@@ -737,9 +737,11 @@ class DataTrack_bigwig(DataTrack):
         else:
             newbins = bins
         
-        out = []
-        for mybin in newbins:
-            out.append(self.data.stats(chr_name, int(mybin[0]),int(mybin[1]), **kwargs))
+        out = np.full(newbins.shape,fill_none)
+        for idx,mybin in enumerate(newbins):
+            stat = self.data.stats(chr_name, int(mybin[0]),int(mybin[1]), **kwargs)
+            if stat is not None:
+                out[idx] = stat
         
         out = [item if item is not None else fill_none for item in out]
         out = np.array(out)

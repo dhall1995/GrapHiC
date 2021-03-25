@@ -26,9 +26,11 @@ def fetch_bins_from_cooler(
     names: Optional[dict] = {}
 ) -> List[List[np.int64]]:
     # Fetch relevant bin_ids from the cooler file
-    b_ids = []
-    n_ids = []
+    b_ids = {}
+    n_ids = {}
     for chrom in regions:
+        b_ids[chrom] = []
+        n_ids[chrom] = []
         for idx, row in enumerate(regions[chrom]):
             b_add = list(
                     cooler.bins()
@@ -36,11 +38,11 @@ def fetch_bins_from_cooler(
                     .index.values
             )
             try:
-                n_ids.append(names[chrom][idx])
+                n_ids[chrom].append(names[chrom][idx])
             except:
-                n_ids.append("{}:{}-{}".format(chrom, row[0], row[1]))
+                n_ids[chrom].append("{}:{}-{}".format(chrom, row[0], row[1]))
                 
-            b_ids.append(
+            b_ids[chrom].append(
                 b_add
             )
     return b_ids, n_ids
@@ -59,6 +61,34 @@ def get_unique_bins(b_ids: List[List[np.int64]]) -> List[np.ndarray]:
             )
 
     return slices
+
+def make_slices(
+    clr: Cooler,
+    regions: Dict[str, np.ndarray],
+    names:Optional[dict] = {},
+    force_disjoint:Optional[bool] = False
+) --> List[np.ndarray,np.ndarray]:
+    # Fetch relevant bin_ids from the cooler file
+    b_ids, n_ids = fetch_bins_from_cooler(cooler=clr, 
+                                          regions=regions, 
+                                          names=names)
+    if force_disjoint:
+        # Identify unique bin_ids and isolate disjoint regions
+        slices = {chrom: get_unique_bins(b_ids=b_ids[chrom]) for chrom in b_ids}
+        n_ids = {}
+        for chrom in slices:
+            n_ids[chrom] = []
+            for sl in slices[chrom]:
+                # start, end, bins and node names for region
+                stl = clr.bins()[sl[0]]["start"].values[0]
+                el = clr.bins()[sl[-1] + 1]["end"].values[0]
+
+                sl_id = f"{chrom}:{stl}-{el}"
+                n_ids[chrom].append(sl_id)
+    else:
+        slices = {chrom:[np.array(item) for item in b_ids[chrom]] for chrom in b_ids}
+        
+    return slices, n_ids
 
 
 if __name__ == "__main__":
