@@ -378,12 +378,11 @@ def compute_ptg_graph_from_regions(
         
         edge_index = rename_nodes(edge_index, mynodes)
         bin_info = pd.concat([c.bins()[sl[0]:sl[-1]+1] for sl in slices], axis = 0)
-        bin_info.index = np.arange(mynodes.shape[0])
         out_dict = {}
         out_dict['edge_index'] = edge_index
         out_dict['edge_attrs'] = edge_data
         out_dict['x'] = onehots
-        out_dict['node_info'] = bin_info 
+        out_dict['cooler_idxs'] = bin_info.index.values 
         out_dict['name'] = n_ids
         return out_dict
     else:
@@ -402,12 +401,11 @@ def compute_ptg_graph_from_regions(
             mynodes = sub_graph_nodes[idx]
             bin_info = c.bins()[sub_graph_nodes[idx][0]:sub_graph_nodes[idx][-1]+1]
             edge_index = rename_nodes(edge_index, mynodes)
-            bin_info.index = np.arange(mynodes.shape[0])
             out_dict = {}
             out_dict['edge_index'] = edge_index
             out_dict['edge_attrs'] = edge_attrs[idx]
             out_dict['x'] = onehots[idx]
-            out_dict['node_info'] = bin_info
+            out_dict['cooler_idxs'] = bin_info.index.values
             out_dict['name'] = n_ids[idx]
             out.append(out_dict)
         
