@@ -1,153 +1,48 @@
+from __future__ import annotations
+
+import logging
+from typing import Dict, Optional
 import numpy as np
 
-def one_hot(chrom): 
-    '''
-    Encodes a chromosome as a one-hot length 20 vector.
-    
-    Arguments:
-    
-    - chrom: A chromosome (string). For example, '2'.
-    
-    Returns: 
-    
-    - vals: A (1,20) shape array with a 1 in the
-            position corresponding to the input
-            chromosome
-    '''
-    vals = np.zeros((1,20))
-    
-    try:
-        c = int(chrom)
-        vals[0,c-1] = 1
-        return vals
-    except:
-        if chrom == 'X':
-            vals[0,-1] = 1
-            return vals
-        else:
-            raise ValueError
-            
-def idx_to_bp(idx, chr_lims, binSize, chroms):
-    '''
-    Utility function to convert from a bin index to basepairs. This
-    assumes that chromosomes are concatenated onto each other.
-    
-    Arguments:
-    
-    - idx: The index in the concatenated array.
-    - chr_lims: Dictionary detailing the start and end basepairs of each chromosome
-                in the contact dictionary. NOTE: the chromosome limits are inclusive
-                i.e. for each CHR_A we should have chromo_limits[CHR_A] = (start_A,
-                end_A) where all basepairs b on this chromsome satisfy:
-                                 start_A <= b <= end_A
-    - binSize: The size of each chromatin bin.
-    - chroms: A list of the chromosomes in the order they have been concatenated
-              together (usually this will just be ['1', '2',..., '19', 'X']).
-    
-    Returns:
-    - chrom: The chromosome corresponding to the input index.
-    - bp: The basepair of the bin on chromosome chrom.
-    
-    '''
-    
-    ordering = {idx: chrom for idx, chrom in enumerate(chroms)}
-    clens = {idx: int((chr_lims[ordering[idx]][-1] - chr_lims[ordering[idx]][0])/binSize) for idx in ordering}
-    tot = 0
-    for idx2 in np.arange(len(chroms)):
-        tot += clens[idx2]
-        if idx <= tot:
-            chrom = ordering[idx2]
-            chridx = idx - tot + clens[idx2]
+def make_chromo_onehot(
+    chromo: str,
+    size: int,
+    chromosomes: Optional[list] = ["chr{}".format(str(i+1)) for i in np.arange(19)] + ['chrX']
+)-> np.array:
+    """
+    Given a chromosome, casts it as a one hot encoded array of a given size.
+    :param chromo: chromosome 
+    :param size: Integer specifying how many times to repeat the one-hot encoded vector
+    :params chromosomes: List of chromosomes in our total dataset
+    :return: one hot array of size (len(chromosomes),size) 
+    """
+    idx = -1
+    for jdx,chromosome in enumerate(chromosomes):
+        if chromo == chromosome:
+            idx = jdx
             break
-    
-    bp = chr_lims[chrom][0] + chridx*binSize
-    return chrom, bp           
-    
+    if idx== -1:
+        print("Provided chromosome not in list of chromosomes")
+        raise
         
-def bp_to_idx(bp, chrom, chr_lims, binSize):
-    '''
-    Utility function to convert from a basepair to a bin index if 
-    chromosomes are concatenated together. This assumes a 
-    concatenation of in the order '1', '2', ..., '19', 'X'.
-    
-    Arguments:
-    - bp: The input basepair.
-    - chrom: The input chromosome (should be a string but can deal
-             with integers).
-    - chr_lims: Dictionary detailing the start and end basepairs of each chromosome
-                in the contact dictionary. NOTE: the chromosome limits are inclusive
-                i.e. for each CHR_A we should have chromo_limits[CHR_A] = (start_A,
-                end_A) where all basepairs b on this chromsome satisfy:
-                                 start_A <= b <= end_A
-    - binSize: The size of each chromatin bin.
-    '''
-    rounded_bp = binSize*np.floor(bp/binSize)
-    chr_idx = int((rounded_bp - chr_lims[chrom][0])/binSize)
-    tot = 0
-    if chrom != 'X':
-        for i in np.arange(1,int(chrom)):
-            tot += (chr_lims[str(i)][1] - chr_lims[str(i)][0])/binSize
-    else:
-        for i in np.arange(1,20):
-            tot += (chr_lims[str(i)][1] - chr_lims[str(i)][0])/binSize
-    
-    return int(tot + chr_idx)
-
-def symlog(vec):
-    out = np.copy(vec)
-    
-    out[out>=1] = 1+np.log10(out[out>=1])
-    out[out<1] = out[out<1]
-    
+    out = np.zeros((size, len(chromosomes)))
+    out[:,idx] = 1
     return out
 
-def log_fold_change(vec1,vec2,
-                    abstolperc = 10,
-                    ftolperc = 90,
-                    log_ftolperc = 10
-                   ):
+def rename_nodes(
+    edge_index: np.ndarray,
+    nodes:np.ndarray
+)-> np.ndarray:
+    """
+    Renames the nodes in an edge_index array to be zero-indexed corresponding to some given nodes.
+    :param edge_index: edge_index array of size (2, num_edges).
+    :param nodes: array specifying the order of the nodes. Must be exhaustive - i.e. there shouldn't appear a value in edge_index which doesn't appear in nodes.
+    :return: edge_index zero-indexed 
+    """
+    node_dict = {node: idx for idx, node in enumerate(nodes)}
+    out = np.zeros(edge_index.shape)
+    f = lambda x: node_dict[x]
     
-    vec1 = np.array(vec1)
-    vec2 = np.array(vec2)
-    
-    fchange = np.ones(vec1.shape)
-    
-    fchange[vec1 != 0] = np.divide(vec2[vec1!=0],vec1[vec1!=0])
-    
-    abschange = abs(vec2 - vec1)
-    posabschange = abschange[abschange > 0]
-    
-    if posabschange.shape[0] == 0:
-        return 0
-    
-    fchange[(vec1 == 0)&(abschange > np.percentile(posabschange, abstolperc))] = np.percentile(fchange, ftolperc)
-    
-    lfc = np.zeros(fchange.shape)
-    
-    lfc[fchange > 0] = np.log10(fchange[fchange>0])
-    
-    lfc[(fchange == 0)&(abschange > np.percentile(posabschange, abstolperc))] = np.percentile(lfc, log_ftolperc)
-    
-    return lfc
-
-def symlog_fold_change(vec1,vec2,
-                    abstolperc = 10,
-                    ftolperc = 90
-                   ):
-    
-    vec1 = np.array(vec1)
-    vec2 = np.array(vec2)
-    
-    fchange = np.ones(vec1.shape)
-    
-    fchange[vec1 != 0] = np.divide(vec2[vec1!=0],vec1[vec1!=0])
-    
-    abschange = abs(vec2 - vec1)
-    posabschange = abschange[abschange > 0]
-    
-    if posabschange.shape[0] == 0:
-        return 0
-    
-    fchange[(vec1 == 0)&(abschange > np.percentile(posabschange, abstolperc))] = np.percentile(fchange, ftolperc)
-    
-    return symlog(fchange)
+    out[0,:] = np.array(list(map(f, edge_index[0,:])))
+    out[1,:] = np.array(list(map(f, edge_index[1,:])))
+    return out

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 import cooler
 import numpy as np
@@ -21,21 +21,29 @@ def parse_cooler(
 
 
 def fetch_bins_from_cooler(
-    cooler: Cooler, regions: Dict[str, np.ndarray]
+    cooler: Cooler, 
+    regions: Dict[str, np.ndarray],
+    names: Optional[dict] = {}
 ) -> List[List[np.int64]]:
     # Fetch relevant bin_ids from the cooler file
     b_ids = []
+    n_ids = []
     for chrom in regions:
-        for row in regions[chrom]:
+        for idx, row in enumerate(regions[chrom]):
             b_add = list(
                     cooler.bins()
                     .fetch("{}:{}-{}".format(chrom, row[0], row[1]))
                     .index.values
             )
+            try:
+                n_ids.append(names[chrom][idx])
+            except:
+                n_ids.append("{}:{}-{}".format(chrom, row[0], row[1]))
+                
             b_ids.append(
                 b_add
             )
-    return b_ids
+    return b_ids, n_ids
 
 
 def get_unique_bins(b_ids: List[List[np.int64]]) -> List[np.ndarray]:

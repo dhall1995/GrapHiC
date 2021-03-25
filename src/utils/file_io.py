@@ -282,67 +282,6 @@ def bed_to_npz(bed_path,
                 params = params)
     
 
-
-##############################################################################################
-
-def save_sc_feature_to_npz(scfiles, feature, chr_lims, binSize, shape, directory):
-    '''
-    Basic script to retrieve and save a single-cell feature from a .nuc format file and convert
-    to a .npz file for downstream useage.
-    
-    Arguments:
-    
-    - scfiles: List of single-cell file paths. These should be .nuc (hdf5) files and should contain the
-               following group structure:
-                       dataTracks/
-                       dataTracks/derived/
-    - feature: The feature name of interest. This assumes an hdf5 file format within the .nuc file of the form:
-                        f["dataTracks"]["derived"][{feature}][{chrom}]
-               for each {chrom} in our chromosomes of interest and where {feature} is our feature name.
-    - chrlims: Dictionary detailing the start and end basepairs of each chromosome in the contact dictionary.
-               NOTE: the chromosome limits are inclusive i.e. for each CHR_A we should have
-               chromo_limits[CHR_A] = (start_A,end_A) where all basepairs b on this chromsome satisfy:
-                                 start_A <= b <= end_A
-    - binSize: The length (in basepairs) of each chromatin bin in our contact map.
-    - shape: Shape of the output feature vector (essentially (N,) where N is the number of nodes).
-    - directory: the directory in which to save the output .npz file for downstream useage. 
-    '''
-    chroms = [str(i+1) for i in np.arange(19)] + ['X']
-    mean, std = collate_sc_features(scfiles, feature, chr_lims, binSize, shape)
-    
-    regions = {chrom: [] for chrom in chroms}
-    mvals = {chrom: [] for chrom in chroms}
-    svals = {chrom: [] for chrom in chroms}
-    for idx in np.arange(len(mean)):
-        chrom, bp = idx_to_bp(idx, chr_lims, binSize, chroms)
-        reg = [bp, bp+binSize]
-        mval = [mean[idx]]
-        sval = [std[idx]]
-        
-        regions[chrom].append(reg)
-        mvals[chrom].append(mval)
-        svals[chrom].append(sval)
-    
-    m_out_dict = {}
-    s_out_dict = {}
-    
-    for chrom in chroms:
-        mrkey = "dataTrack/regions/{}_{}/{}".format('mean', feature, chrom)
-        srkey = "dataTrack/regions/{}_{}/{}".format('std', feature, chrom)
-        mvkey = "dataTrack/values/{}_{}/{}".format('mean', feature, chrom)
-        svkey = "dataTrack/values/{}_{}/{}".format('std', feature, chrom)
-            
-        m_out_dict[mrkey] = regions[chrom]
-        s_out_dict[srkey] = regions[chrom]
-        m_out_dict[mvkey] = mvals[chrom]
-        s_out_dict[svkey] = svals[chrom]
-     
-    
-    np.savez(osp.join(directory, "{}_mean_{}".format(condition,feature)), **m_out_dict)
-    np.savez(osp.join(directory, "{}_std_{}".format(condition, feature)), **s_out_dict)
-
-
-
 ######################################################################
 import pickle
 def save_obj(obj, out_path):
