@@ -1,8 +1,23 @@
 from __future__ import annotations
 
 import logging
-from typing import Dict, Optional
+from typing import Dict, Optional,List
 import numpy as np
+
+def buffer_regs(regs: np.ndarray,
+                buff: Optional[int] = 1e6,
+                lims: Optional[List[int]] = [0,1e9]
+               )-> np.ndarray:
+    out = np.zeros(regs.shape)
+    mean = np.mean(regs,axis = 1).astype('int32')
+    out[:,0] = mean - buff
+    out[:,1] = mean + buff
+    
+    out[out<lims[0]] = lims[0]
+    out[out>lims[1]] = lims[1]
+    
+    return out.astype('int32')
+
 
 def make_chromo_onehot(
     chromo: str,

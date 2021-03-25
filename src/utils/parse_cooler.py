@@ -67,7 +67,7 @@ def make_slices(
     regions: Dict[str, np.ndarray],
     names:Optional[dict] = {},
     force_disjoint:Optional[bool] = False
-) --> List[np.ndarray,np.ndarray]:
+) -> List[np.ndarray,np.ndarray]:
     # Fetch relevant bin_ids from the cooler file
     b_ids, n_ids = fetch_bins_from_cooler(cooler=clr, 
                                           regions=regions, 

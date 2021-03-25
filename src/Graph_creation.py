@@ -241,7 +241,9 @@ def compute_ptg_graph_from_regions(
                     slist = slices[chrom1][idx:]
                 else:
                     slist = slices[chrom2]
-                for s2 in slist:
+                for jdx,s2 in enumerate(slist):
+                    if s1[0] == s2[0] and jdx != 0:
+                        continue
                     if s1[0] != s2[0] and not join:
                         continue
                 
@@ -448,7 +450,7 @@ def add_binned_data_to_graph(
     binned_data: str
 ) -> None:
     idxs = graph['cooler_idxs']
-    data = pd.read_csv(binned_data, sep = "\t")
+    data = pd.read_csv(binned_data, sep = "\t",index_col=0)
     
     graph['x'] = np.append(graph['x'], 
                            data.loc[idxs].values, 

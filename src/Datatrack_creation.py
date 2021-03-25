@@ -9,7 +9,8 @@ from .utils.Datatrack import DataTrack_bigwig as dtbw
 def evaluate_bigwig_over_cooler_bins(cooler_path,
                                      bwpaths = [],
                                      stats_types = ['max'],
-                                     allowed_chroms = ['chr{}'.format(idx+1) for idx in np.arange(19)]+['chrX']
+                                     allowed_chroms = ['chr{}'.format(idx+1) for idx in np.arange(19)]+['chrX'],
+                                     verbose = True
                                     ):
     c = cooler.Cooler(cooler_path)
     bins = c.bins()
@@ -25,9 +26,13 @@ def evaluate_bigwig_over_cooler_bins(cooler_path,
     chrom_stats = {chrom: chrom_stats[chrom] for chrom in chrom_stats if chrom in allowed_chroms}
     names = []
     for bigwig in bwpaths:
+        if verbose:
+            print(bigwig)
         bwname = os.path.split(bigwig)[1].split(".")[0]
         bw = dtbw('bigwig').from_bw(bigwig)
         for stype in stats_types:
+            if verbose:
+                print("\t{}".format(stype))
             for chrom in chrom_binregs:
                 if chrom in bw.chr_lims:
                     stats_add = bw.bin_single_interval(chrom,
