@@ -1,1 +1,5 @@
-**/data
+Data/KR_downsampled_WT_merged_10000_bw_data.tsv
+Data/rnaseq.tsv
+.ipynb_checkpoints/*
+__pycache__/*
+
