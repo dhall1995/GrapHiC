@@ -1,4 +1,4 @@
-# Hi_C_GNN
+# GrapHiC-ML (Graph-based Hi-C Machine Learning)
 A selection of scripts to analyse Hi-C contact data through the use of graphical neural networks. 
 
 Proper implementation/creation of the correct pytorch geometric graph datasets requires ChIPseq and DNA methylation data
