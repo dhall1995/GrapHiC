@@ -4,6 +4,21 @@ import logging
 from typing import Dict, Optional,List
 import numpy as np
 
+def ProgressBar(iteration,
+                total,
+                decimals = 1, 
+                length = 100, 
+                fill = '█',
+                suffix = '',
+                prefix = '',
+                printEnd = "\r"
+               ):
+    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+    filledLength = int(length * iteration // total)
+    bar = fill * filledLength + '-' * (length - filledLength)
+    print(f'\r{prefix} |{bar}| {percent}% {suffix}', end = printEnd)
+        
+        
 def buffer_regs(regs: np.ndarray,
                 buff: Optional[int] = 1e6,
                 lims: Optional[List[int]] = [0,1e9]
