@@ -61,7 +61,8 @@ def make_chromo_onehot(
 
 def rename_nodes(
     edge_index: np.ndarray,
-    nodes:np.ndarray
+    nodes:np.ndarray,
+    new_nodes = None
 )-> np.ndarray:
     """
     Renames the nodes in an edge_index array to be zero-indexed corresponding to some given nodes.
@@ -69,7 +70,10 @@ def rename_nodes(
     :param nodes: array specifying the order of the nodes. Must be exhaustive - i.e. there shouldn't appear a value in edge_index which doesn't appear in nodes.
     :return: edge_index zero-indexed 
     """
-    node_dict = {node: idx for idx, node in enumerate(nodes)}
+    if new_nodes is not None:
+        node_dict = {node: new_nodes[idx] for idx, node in enumerate(nodes)}
+    else:
+        node_dict = {node: idx for idx, node in enumerate(nodes)}
     out = np.zeros(edge_index.shape)
     f = lambda x: node_dict[x]
     

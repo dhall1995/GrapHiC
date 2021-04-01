@@ -82,6 +82,7 @@ if __name__=="__main__":
             for jdx,item in enumerate(glist[chrom]):
                 item['target'] = tdict[chrom][jdx]
                 item['prom_region'] = prom_regs[chrom][jdx,:]
+                item['prom_chrom'] = chrom
                 np.savez(os.path.join(args.out_path,"data_{}".format(ticker)), **item)
                 ticker += 1
                 ProgressBar(ticker,
@@ -103,6 +104,7 @@ if __name__=="__main__":
         for jdx,item in enumerate(glist[chrom]):
             item['target'] = tdict[chrom][jdx]
             item['prom_region'] = prom_regs[chrom][jdx,:]
+            item['prom_region'] = chrom
             np.savez(os.path.join(args.out_path,"data_{}".format(ticker)), **item)
             ticker += 1
             ProgressBar(ticker,
