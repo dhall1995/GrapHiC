@@ -130,9 +130,11 @@ def rvps_from_bed(file_path,
         allowed_chroms = list(set(x[chrom_col].values))
         for idx, item in enumerate(allowed_chroms):
             #use the chromosome naming convention that chromosomes don't start with chr
-            if "chr" in item:
-                allowed_chroms[idx] = item[3:]
-        
+            if "chr" not in item:
+                allowed_chroms[idx] = "chr" + item
+    
+    chrom_col = np.where(x.columns.values == chrom_col)[0][0]
+    
     regions_dict = {}
     values_dict = {}
     ID_dict = {}
@@ -150,8 +152,8 @@ def rvps_from_bed(file_path,
         per_chrom_IDs = None
     
     for k1 in per_chrom_regions:
-        if "chr" in str(k1):
-            k1_ = k1[3:]
+        if "chr" not in str(k1):
+            k1_ = "chr"+k1
         else:
             k1_ = k1
             

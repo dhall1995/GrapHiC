@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from typing import Dict, Optional,List
 import numpy as np
+import pandas as pd
+import torch
 
 def ProgressBar(iteration,
                 total,
@@ -32,6 +34,36 @@ def buffer_regs(regs: np.ndarray,
     out[out>lims[1]] = lims[1]
     
     return out.astype('int32')
+
+def ptg_from_npy(arch):
+    out = Data(x = torch.tensor(arch['x'],
+                              dtype = torch.double
+                              ), 
+             edge_index=torch.tensor(
+                 arch['edge_index'],
+                 dtype=torch.long
+                 ),
+             edge_attr=torch.tensor(
+                 arch['edge_attrs'],
+                 dtype = torch.double
+                 ),
+             y = torch.tensor(
+                 arch['target'],
+                 dtype = torch.double
+                 )
+             )
+    out.cooler_idxs = torch.tensor(arch['cooler_idxs'],
+                                 dtype = torch.long)
+    out.name = arch['name']
+    out.prom_x = torch.tensor(arch['prom_x'],
+                            dtype = torch.double)
+    return out
+
+def name_chr(chrom):
+    if 'chr' in chrom:
+        return str(chrom)
+    else:
+        return "chr"+str(chrom)
 
 
 def make_chromo_onehot(

@@ -8,9 +8,11 @@ import cooler
 import networkx as nx
 import numpy as np
 import pandas as pd
+from scipy.sparse import coo_matrix as coo
 
 from .utils.parse_cooler import (
-    make_slices
+    make_slices,
+    make_bins
 )
 
 from .utils.misc import (
@@ -185,12 +187,12 @@ def make_edges_bidirectional(
     edge_data: np.ndarray
 ):
     edge_index = np.append(edge_index,
-                           edge_index[np.diff(edge_index,axis = 0)!=0,:],
+                           edge_index[::-1,:],
                            axis = 1
                           )
     
     edge_data = np.append(edge_data,
-                          edge_data[np.diff(edge_index,axis = 0)!=0],
+                          edge_data,
                           axis = 0
                          )
     
@@ -281,7 +283,7 @@ def add_backbone_interactions(
         #append the backbone data to the current edge data
         if record_backbone_interactions:
             bbone_data = np.append(bbone_data,
-                                   np.ones(len(bbone_data_to_add))[:,None],
+                                   np.ones(len(bbone_data_to_add)),
                                    axis = 0
                                   )
     
@@ -337,6 +339,9 @@ def _single_clr_edge_and_node_info_from_slices(
                     )
             
                     edge_data = mat.data[:, None]
+                
+                    if np.sum(s1-s2)!=0:
+                        edge_index, edge_data = make_edges_bidirectional(edge_index,edge_data)
                     
                     ind = np.lexsort((edge_index[0,:],edge_index[1,:]))
                     edge_index = edge_index[:,ind]
@@ -352,12 +357,75 @@ def _single_clr_edge_and_node_info_from_slices(
                         
     return edge_idxs, edge_attrs, sub_graph_nodes
 
+def _single_clr_edge_and_node_info_from_sites(
+    c: cooler.Cooler, 
+    sites: Dict[np.ndarray], 
+    balance: Optional[bool] = True, 
+    join: Optional[bool] = False
+):
+    # Iterate through slices, adding in edge indexes and edge attributes
+    edge_idxs = {}
+    edge_attrs = {}
+    sub_graph_nodes = {}
+    chroms = list(sites.keys())
+    for idx, chrom1 in enumerate(chroms):
+        edge_idxs[chrom1] = {}
+        edge_attrs[chrom1] = {}
+        sub_graph_nodes[chrom1] = {}
+        for chrom2 in chroms[idx:]:
+            if chrom1 != chrom2 and not join:
+                continue
+            mat = c.matrix(balance=balance).fetch(chrom1,
+                                                  chrom2)
+            mat = mat[sites[chrom1],:]
+            mat = mat[:,sites[chrom2]]
+                    
+            mat = coo(mat)
+            
+            b1 = c.bins().fetch(chrom1).index.values[sites[chrom1]]
+            b2 = c.bins().fetch(chrom2).index.values[sites[chrom2]]
+            
+            edge_index = np.concatenate(
+                        [
+                            b1[mat.row][None,:],
+                            b2[mat.col][None,:]
+                        ],
+                        axis=0,
+                    )
+            
+            edge_data = mat.data[:, None]
+            
+            if chrom1 != chrom2:
+                edge_index = np.append(edge_index,
+                                       edge_index[::-1,:],
+                                       axis = 1
+                                      )
+                edge_data = np.append(edge_data,
+                                      edge_data,
+                                      axis = 0
+                                     )
+                
+            ind = np.lexsort((edge_index[0,:],edge_index[1,:]))
+            edge_index = edge_index[:,ind]
+            edge_data = edge_data[ind,:]
+            
+            edge_idxs[chrom1][chrom2]= [edge_index]
+            edge_attrs[chrom1][chrom2]=[edge_data]
+        
+            if chrom1 == chrom2:
+                sub_graph_nodes[chrom1][chrom2] = [b1]
+            else:
+                sub_graph_nodes[chrom1][chrom2] = [np.append(b1,
+                                                             b2)]
+                        
+    
+    return edge_idxs, edge_attrs, sub_graph_nodes
+
 
 def join_edge_attrs(
     edge_idxs: List[np.ndarray],
     edge_attrs: List[np.ndarray],
-    graph_nodes: List[np.ndarray],
-    contiguous = True
+    graph_nodes: List[np.ndarray]
 )->List[np.ndarray]:
     '''
     Given some list of edge index arrays and some 1D attributes for those edges, creates a new edge index array
@@ -366,7 +434,7 @@ def join_edge_attrs(
     if len(edge_idxs)==1:
         return [edge_idxs[0], edge_attrs[0]]
     
-    contiguous = np.sum(np.diff(graph_nodes)-1)==0
+    contiguous = np.sum(np.diff(graph_nodes[0])-1)==0
     if contiguous:
         for idx, nodes in enumerate(graph_nodes):
             edge_idxs[idx] -= nodes[0]
@@ -397,9 +465,61 @@ def join_edge_attrs(
     f = lambda x: edge_dict[x]
     for idx, attr in enumerate(edge_attrs):
         attr_idxs = np.array(list(map(f, dummy_idxs[idx])))
-        all_data[attr_idxs,idx] = attr[:,0]
+        all_data[attr_idxs.astype('int'),idx] = attr[:,0]
         
     return all_edges, all_data    
+
+def join_multi_clr_graphs(
+    clr_edge_idxs: List[np.ndarray],
+    clr_edge_attrs: List[np.ndarray],
+    clr_sub_graph_nodes: List[np.ndarray],
+    backbone: Optional[bool] = True,
+    record_backbone_interactions: Optional[bool] = True,
+    record_cistrans_interactions: Optional[bool] = False
+):
+    edge_idxs = {}
+    edge_attrs = {}
+    for chrom1 in clr_edge_idxs[0]:
+        edge_idxs[chrom1] = {}
+        edge_attrs[chrom1] = {}
+        for chrom2 in clr_edge_idxs[0][chrom1]:
+            edge_idxs[chrom1][chrom2] = []
+            edge_attrs[chrom1][chrom2] = []
+            for idx, reg_graph in enumerate(clr_edge_idxs[0][chrom1][chrom2]):
+                sep_edge_idxs = [item[chrom1][chrom2][idx] for item in clr_edge_idxs]
+                
+                sep_edge_attrs = [item[chrom1][chrom2][idx] for item in clr_edge_attrs]
+                
+                sep_sub_graph_nodes = [item[chrom1][chrom2][idx] for item in clr_sub_graph_nodes]
+
+                ei, ea = join_edge_attrs(sep_edge_idxs,
+                                         sep_edge_attrs,
+                                         sep_sub_graph_nodes
+                                        )
+                
+                contiguous = np.sum(np.diff(sep_sub_graph_nodes[0])-1)==0
+                if backbone and contiguous and chrom1==chrom2:
+                    ei, ea = add_backbone_interactions(ei,
+                                                       ea,
+                                                       sep_sub_graph_nodes[0],
+                                                       record_backbone_interactions = record_backbone_interactions)
+                    
+                    
+                elif backbone and record_backbone_interactions:
+                    ea = np.append(ea,
+                                   np.zeros(ea.shape[0])[:,None],
+                                   axis = 1
+                                  )
+                
+                if record_cistrans_interactions:
+                    ea = add_cistrans_interactions(ea,
+                                                   chrom1,
+                                                   chrom2)
+                
+                edge_idxs[chrom1][chrom2].append(ei) 
+                edge_attrs[chrom1][chrom2].append(ea)
+                
+    return edge_idxs, edge_attrs
 
 #compute pytorch geometric data object from regions
 def compute_ptg_graph_from_regions(
@@ -412,7 +532,7 @@ def compute_ptg_graph_from_regions(
     backbone: Optional[bool] = True,
     record_cistrans_interactions: Optional[bool] = False,
     record_backbone_interactions: Optional[bool] = True,
-    record_node_chromosome_as_onehot: Optional[bool] = True,
+    record_node_chromosome_as_onehot: Optional[bool] = False,
     record_names = True,
     same_index = True,
     chromosomes: Optional[list] = ["chr{}".format(str(i+1)) for i in np.arange(19)] + ['chrX']
@@ -471,44 +591,13 @@ def compute_ptg_graph_from_regions(
         clr_edge_attrs.append(ea)
         clr_sub_graph_nodes.append(sgn)
     
-    edge_idxs = {}
-    edge_attrs = {}
-    for chrom1 in clr_edge_idxs[0]:
-        edge_idxs[chrom1] = {}
-        edge_attrs[chrom1] = {}
-        for chrom2 in clr_edge_idxs[0][chrom1]:
-            edge_idxs[chrom1][chrom2] = []
-            edge_attrs[chrom1][chrom2] = []
-            for idx, reg_graph in enumerate(clr_edge_idxs[0][chrom1][chrom2]):
-                sep_edge_idxs = [item[chrom1][chrom2][idx] for item in clr_edge_idxs]
-                
-                sep_edge_attrs = [item[chrom1][chrom2][idx] for item in clr_edge_attrs]
-                
-                sep_sub_graph_nodes = [item[chrom1][chrom2][idx] for item in clr_sub_graph_nodes]
-                ei, ea = join_edge_attrs(sep_edge_idxs,
-                                         sep_edge_attrs,
-                                         sep_sub_graph_nodes
-                                        )
-                
-                contiguous = np.sum(np.diff(sep_sub_graph_nodes[0])-1)==0
-                if backbone and contiguous and chrom1==chrom2:
-                    ei, ea = add_backbone_interactions(ei,
-                                                       ea,
-                                                       sep_sub_graph_nodes[0],
-                                                       record_backbone_interactions = record_backbone_interactions)
-                else:
-                    ea = np.append(ea,
-                                   np.ones(ea.shape[0])[:,None],
-                                   axis = 1
-                                  )
-                
-                if record_cistrans_interactions:
-                    ea = add_cistrans_interactions(ea,
-                                                   chrom1,
-                                                   chrom2)
-                
-                edge_idxs[chrom1][chrom2].append(ei) 
-                edge_attrs[chrom1][chrom2].append(ea)
+    edge_idxs, edge_attrs = join_multi_clr_graphs(clr_edge_idxs, 
+                                                  clr_edge_attrs,
+                                                  clr_sub_graph_nodes,
+                                                  backbone = backbone,
+                                                  record_backbone_interactions = record_backbone_interactions,
+                                                  record_cistrans_interactions = record_cistrans_interactions
+                                                 )
                 
         
     if join:
@@ -574,6 +663,7 @@ def compute_ptg_graph_from_regions(
             for idx, edge_index in enumerate(edge_idxs[chrom][chrom]):
                 mynodes = [item[chrom][chrom][idx] for item in clr_sub_graph_nodes]
                 bin_info = c.bins()[clr_sub_graph_nodes[0][chrom][chrom][idx][0]:clr_sub_graph_nodes[0][chrom][chrom][idx][-1]+1].index.values
+                #print(bin_info, clr_sub_graph_nodes[0][chrom][chrom][idx])
                 edge_index = rename_nodes(edge_index, mynodes[0])
                 out_dict = {}
                 out_dict['edge_index'] = edge_index
@@ -581,7 +671,7 @@ def compute_ptg_graph_from_regions(
                 if record_node_chromosome_as_onehot:
                     out_dict['x'] = onehots[chrom][idx]
                 else:
-                    out_dict['x'] = np.empty((len(mynodes),0))
+                    out_dict['x'] = []
                 out_dict['cooler_idxs'] = bin_info
                 if record_names:
                     out_dict['name'] = n_ids[chrom][idx]
@@ -589,23 +679,173 @@ def compute_ptg_graph_from_regions(
         
         return out
     
+#compute pytorch geometric data object from regions
+def compute_ptg_graph_from_sites(
+    contacts: List[Cooler],
+    sites: Dict[str, np.ndarray],
+    names: Optional[dict] = {},
+    balance: Optional[bool] = False,
+    join: Optional[bool] = True,
+    record_cistrans_interactions: Optional[bool] = False,
+    record_node_chromosome_as_onehot: Optional[bool] = False,
+    record_names: Optional[bool] = True,
+    same_index: Optional[bool] = True,
+    chromosomes: Optional[list] = ["chr{}".format(str(i+1)) for i in np.arange(19)] + ['chrX']
+) -> list:
+    """
+    Computes a HiC Graph from a list of cooler files
+    :param contacts: list of cooler files generated from Hi-C experiments. Cooler files don't have to be indexed the same but they do have to all contain the chromosomes and regions being probed.
+    :param regions: Dictionary specifying chromosomes and regions to collect data over. Dictionary should contain chromosomes as keys and 2D integer numpy arrays as values.
+    :param names: Dictionary specifying the name associated with each region
+    :params balance: Optional boolean to determine whether returned weights should be balanced or not.
+    :param join: Optional boolean to determine whether trans (inter-region) interactions are included. If this option is True then we automatically compose the subgraphs into one big graph
+    :param force_disjoint: Optional boolean to determine whether to force the input regions to be disjoint regions.
+    :param backbone: Optional boolean to identify edges which make up the chromatin backbone and include this as an edge feature.
+    :param record_cistrans_interactions: Optional boolean to explicitely record cis (within chromosome) and trans (between chromosome) interactions within the edge_attributes
+    :param record_backbone_interactions: Optional boolean to explicitely record backbone interactions within the edge attributes
+    :param record_node_chromosome_as_onehot: Optional boolean to explicitely record node chromosome as a feature vector with chromosomes one hot encoded.
+    :param chromosomes: Optional list of chromosomes with which to perform the one-hot encoding
+    :return: edge index object, edge attributes and node assignments by chromosome 
+    """    
+    if isinstance(contacts,str):
+        contacts = [contacts]
+
+    clr_edge_idxs = []
+    clr_edge_attrs = []
+    clr_sub_graph_nodes = []
+    csites = []
+    
+    
+    for idx,clr in enumerate(contacts):
+        c = cooler.Cooler(clr)
+        if idx == 0:
+            chrom_ind,names,bad_sites = make_bins(clr=c,
+                           sites=sites,
+                           names = names
+                          )
+        elif not same_index:
+            chrom_ind,names,bad_sites = make_bins(clr=c,
+                           sites=sites,
+                           names = names
+                          )
+        if same_index:
+            csites = [chrom_ind]
+        else:
+            csites.append(chrom_ind)
+        
+        ei, ea, sgn = _single_clr_edge_and_node_info_from_sites(c,
+                                                                chrom_ind,
+                                                                balance = balance
+                                                               )
+        clr_edge_idxs.append(ei)
+        clr_edge_attrs.append(ea)
+        clr_sub_graph_nodes.append(sgn)
+    
+    edge_idxs, edge_attrs = join_multi_clr_graphs(clr_edge_idxs, 
+                                                  clr_edge_attrs,
+                                                  clr_sub_graph_nodes,
+                                                  backbone = False,
+                                                  record_backbone_interactions = False,
+                                                  record_cistrans_interactions = record_cistrans_interactions
+                                                 )
+                
+        
+    if join:
+        mynodes = np.concatenate([np.concatenate(clr_sub_graph_nodes[0][chrom][chrom]) for chrom in sites])
+        mynames = np.concatenate([names[chrom] for chrom in sites])
+        
+        edge_idxs = {chrom1: {chrom2: np.concatenate(edge_idxs[chrom1][chrom2],
+                                                      axis = 1) for chrom2 in edge_idxs[chrom1]}for chrom1 in edge_idxs}
+        edge_index = {chrom1: np.concatenate([edge_idxs[chrom1][chrom2] for chrom2 in edge_idxs[chrom1]],
+                                             axis = 1) for chrom1 in edge_idxs}
+        edge_index = np.concatenate([edge_index[chrom1] for chrom1 in edge_index],
+                                    axis = 1)
+        
+        edge_attrs = {chrom1: {chrom2: np.concatenate(edge_attrs[chrom1][chrom2],
+                                                      axis = 0) for chrom2 in edge_attrs[chrom1]}for chrom1 in edge_attrs}
+        
+        edge_data = {chrom1: np.concatenate([edge_attrs[chrom1][chrom2] for chrom2 in edge_attrs[chrom1]], 
+                                             axis = 0) for chrom1 in edge_attrs}
+        edge_data = np.concatenate([edge_data[chrom1] for chrom1 in edge_data],
+                                    axis = 0)
+        
+        onehots = []
+        if record_node_chromosome_as_onehot:
+            for sl in mynodes[0]:
+                chrom = c.bins()[sl[0]]["chrom"].values[0]
+                onehot_x = make_chromo_onehot(chrom, 
+                                              sl.shape[0],
+                                              chromosomes = chromosomes
+                                             )
+                onehots.append(onehot_x)
+                
+            onehots = np.concatenate(onehots,
+                                     axis = 0
+                                    )
+        
+        edge_index = rename_nodes(edge_index, mynodes)        
+        out_dict = {}
+        out_dict['edge_index'] = edge_index
+        out_dict['edge_attrs'] = edge_data
+        out_dict['x'] = onehots
+        out_dict['cooler_idxs'] = mynodes
+        if record_names:
+            out_dict['name'] = mynames
+        return out_dict, bad_sites
+    else:
+        c = cooler.Cooler(contacts[0])
+        out = {}
+        onehots = {}
+        if record_node_chromosome_as_onehot:
+            for chrom in sites:
+                onehots[chrom] = []
+                onehot_x = make_chromo_onehot(chrom, 
+                                              sites[chrom].shape[0],
+                                              chromosomes = chromosomes)
+                onehots[chrom].append(onehot_x)
+        
+        for chrom in edge_idxs:
+            mynodes = clr_sub_graph_nodes[0][chrom][chrom]
+            edge_index = rename_nodes(edge_idxs[chrom][chrom][0], mynodes[0])
+            out_dict = {}
+            out_dict['edge_index'] = edge_index
+            out_dict['edge_attrs'] = edge_attrs[chrom][chrom][0]
+            if record_node_chromosome_as_onehot:
+                out_dict['x'] = onehots[chrom][0]
+            else:
+                out_dict['x'] = []
+            out_dict['cooler_idxs'] = mynodes
+            if record_names:
+                out_dict['name'] = names[chrom]
+            out[chrom] = out_dict
+        
+        return out, bad_sites
+    
+    
 def add_binned_data_to_graph(
     graph: dict,
     binned_data: str
 ) -> None:
     idxs = graph['cooler_idxs']
-    data = pd.read_csv(binned_data, sep = "\t",index_col=0)
+    data = pd.read_csv(binned_data, 
+                       sep = "\t",
+                       index_col = 0
+                      )
     
-    graph['x'] = np.append(graph['x'], 
-                           data.loc[idxs].values, 
-                           axis = 1)
+    if isinstance(graph['x'], np.ndarray):
+        graph['x'] = np.append(graph['x'],
+                               data.loc[idxs].values,
+                               axis = 1)
+    else:
+        graph['x'] = data.loc[idxs].values
     
 def add_binned_data_to_graphlist(
     graph_list: dict,
     binned_data: str
 ) -> None:
     for graph in graph_list:
-        add_binned_data_to_graph(graph, binned_data)
+        add_binned_data_to_graph(graph, 
+                                 binned_data)
 
     
 

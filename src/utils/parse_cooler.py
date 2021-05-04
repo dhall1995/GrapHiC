@@ -90,6 +90,35 @@ def make_slices(
         
     return slices, n_ids
 
+def make_bins(
+    clr: Cooler,
+    sites: Dict[str,np.ndarray],
+    names: Optional(Dict[str,str])=None
+) -> Dict[str, np.ndarray]:
+    bins = {}
+    outnames = {}
+    
+    bad_sites = {}
+    for chrom in sites:
+        cbins = clr.bins().fetch(chrom)
+        start = cbins['start'].values[0]
+        site_locs = ((sites[chrom] - start)/clr.binsize).astype('int')
+        good_sites = site_locs < cbins.shape[0]
+        
+        bad_sites[chrom] = np.where(~good_sites)[0]
+        
+        bins[chrom] = site_locs[good_sites]
+        if names is not None:
+            outnames[chrom] = np.array(names[chrom])[good_sites]
+    
+    if names is not None:
+        return bins, outnames, bad_sites
+    else:
+        return bins, bad_sites
+            
+    
+    
+
 
 if __name__ == "__main__":
 

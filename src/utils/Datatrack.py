@@ -635,6 +635,7 @@ class DataTrack_bigwig(DataTrack):
               chr_name, 
               intervals,
               fill_nan = 0,
+              stats_type='mean',
               **kwargs):
         '''
         Evaluate our datatrack for all basepairs in a given region interval
@@ -650,6 +651,7 @@ class DataTrack_bigwig(DataTrack):
             num = self.data.stats(chr_name,
                                   int(interval[0]),
                                   int(interval[1]),
+                                  type = stats_type,
                                   **kwargs)
             for idx, item in enumerate(num):
                 if item is None:
@@ -660,7 +662,9 @@ class DataTrack_bigwig(DataTrack):
                        
         return np.array(out)
                        
-    def data_in_interval(self,chr_name, interval = None):
+    def data_in_interval(self,
+                         chr_name, 
+                         interval = None):
         '''
         Return raw data which overlaps with a given interval on a chromosome:
             - chr_name: Name of the chromosome.
@@ -674,12 +678,13 @@ class DataTrack_bigwig(DataTrack):
          
                        
     def bin_single_interval(self,
-                       chr_name,
-                       bins,
-                       interval= None,
-                       norm_signal_by_chrom_max = False,
-                       fill_none = 0,
-                       **kwargs):
+                            chr_name,
+                            bins,
+                            interval= None,
+                            norm_signal_by_chrom_max = False,
+                            fill_none = 0,
+                            stats_type = 'mean',
+                            **kwargs):
         '''
         Evaluate our datatrack for all basepairs in a given region on a given chromosome
         Arguments:
@@ -724,6 +729,7 @@ class DataTrack_bigwig(DataTrack):
                                   int(interval[0]),
                                   int(interval[1]),
                                   nBins = nBins,
+                                  type = stats_type,
                                   **kwargs)
             
             out = [item if item is not None else fill_none for item in out]
@@ -739,7 +745,11 @@ class DataTrack_bigwig(DataTrack):
         
         out = np.full(newbins.shape,fill_none)
         for idx,mybin in enumerate(newbins):
-            stat = self.data.stats(chr_name, int(mybin[0]),int(mybin[1]), **kwargs)
+            stat = self.data.stats(chr_name, 
+                                   int(mybin[0]),
+                                   int(mybin[1]),
+                                   type = stats_type,
+                                   **kwargs)
             if stat is not None:
                 out[idx] = stat
         
@@ -787,7 +797,8 @@ class DataTrack_bigwig(DataTrack):
                 chr_lim_inputer = chr_lims[chrom]
             out['bins'][chrom], out['vals'][chrom] = self.bin_single_interval(chrom, binSize,
                                                                               interval= chr_lim_input,
-                                                                              void_regions = void_input, **kwargs)
+                                                                              void_regions = void_input, 
+                                                                              **kwargs)
             
         return out
     
@@ -819,7 +830,7 @@ class DataTrack_bigwig(DataTrack):
                                              binSize,
                                              interval = interval,
                                              norm_signal_by_chrom_max = norm_signal_by_chrom_max,
-                                             type = stats_type,
+                                             stats_type = stats_type,
                                                 )
     
         xpos = np.mean(xpos,axis = 1)

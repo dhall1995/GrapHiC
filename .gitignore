@@ -1,6 +1,6 @@
-Data/Graphs/*
-Data/KR_downsampled_WT_merged_10000_bw_data.tsv
-Data/rnaseq.tsv
+Data/archive/*
+test_scripts/*
+test_scripts
 .ipynb_checkpoints/*
 __pycache__/*
 
