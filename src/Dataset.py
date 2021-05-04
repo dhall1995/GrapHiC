@@ -164,6 +164,8 @@ class HiC_Dataset(Dataset):
         
     @property
     def raw_file_names(self):
+        conts = [os.path.join('contacts',item) for item in self.contacts]
+        bigwigs = [os.path.join('bigwigs',item) for item in self.contacts]
         return [self.contacts, 
                 self.bigwigs, 
                 self.target]
@@ -193,7 +195,7 @@ class HiC_Dataset(Dataset):
                           columns = df.columns,
                           index= df.index)
         
-        df.to_csv(os.path.join(self.raw_dir, "cooler_bigwig_data.csv"), 
+        df.to_csv(os.path.join(self.processed_dir, "cooler_bigwig_data.csv"), 
                   sep = "\t")
         
         #EVALUATE BIGWIGS OVER THE TARGETS AND SAVE TO FILE
@@ -207,7 +209,9 @@ class HiC_Dataset(Dataset):
         for idx,name in enumerate(colnames):
             df[name] = arr[:,idx]
         
-        df.to_csv(self.target,sep="\t",index=False)
+        df.to_csv(self.target,
+                  sep="\t",
+                  index=False)
         
         df = df.loc[[item in self.chromosomes for item in df['chromosome']]]
         
@@ -228,7 +232,7 @@ class HiC_Dataset(Dataset):
                      graph_regions,
                      names,
                      target,
-                     os.path.join(self.raw_dir, "cooler_bigwig_data.csv"),
+                     os.path.join(self.processed_dir, "cooler_bigwig_data.csv"),
                      pdata,
                      self.chunk_size,
                      self.processed_dir,

@@ -1,4 +1,4 @@
-from scr.Dataset import HiC_Dataset
+from src.Dataset import HiC_Dataset
 
 if __name__=="__main__":
     
@@ -6,7 +6,7 @@ if __name__=="__main__":
     parser.add_argument("-c","--cooler_files",
                         nargs = "+",
                         help="Cooler file from a Hi-C experiment",
-                        default = '/disk2/dh486/cooler_files/WT/manually_downsampled/KR/KR_downsampled_WT_merged_10000.cool',
+                        default = 'KR_downsampled_WT_merged_10000.cool',
                         type=str)
     parser.add_argument("-t","--target",
                         help="path tsv with columns ['chrom','promoter_start','promoter_end','target','name']",
@@ -15,7 +15,7 @@ if __name__=="__main__":
     parser.add_argument("-b","--bigwigs",
                         help="bigwig file names",
                         nargs = "+",
-                        default = ['/disk2/dh486/bigwigs/GSEXXXXXLaue_CTCF_dipmESC_treat_pileup_filter_norm.bw'],
+                        default = ['Mbd3_ESC.bw'],
                         type=str)
     parser.add_argument("-n","--names",
                         help="names of each datatrack",
@@ -60,7 +60,7 @@ if __name__=="__main__":
                        args.root,
                        contacts=args.contacts,
                        bigwigs=args.bigwigs,
-                       names=args.names
+                       names=args.names,
                        target=args.target,
                        transform=args.transform,
                        pre_transform=None,

@@ -1,4 +1,6 @@
 Data/archive/*
+Data/raw/*
+Data/processed/*
 test_scripts/*
 test_scripts
 .ipynb_checkpoints/*
