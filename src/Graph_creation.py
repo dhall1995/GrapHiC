@@ -581,7 +581,6 @@ def compute_ptg_graph_from_regions(
             slices = [sl]
         else:
             slices.append(sl)
-            
         ei, ea, sgn = _single_clr_edge_and_node_info_from_slices(c, 
                                                                  sl,
                                                                  balance = balance,

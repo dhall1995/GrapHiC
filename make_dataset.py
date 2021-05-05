@@ -1,7 +1,11 @@
 from src.Dataset import HiC_Dataset
+import numpy as np
+
+CHROMS = [f'chr{idx+1}' for idx in np.arange(19)]+['chrX']
 
 if __name__=="__main__":
     
+    import argparse
     parser = argparse.ArgumentParser(description='Construct a datset of per-gene graph objects based off contact info, some target (e.g. rnaseq) and protein binding data', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-c","--cooler_files",
                         nargs = "+",
@@ -56,13 +60,12 @@ if __name__=="__main__":
     if isinstance(args.bigwigs,str):
         args.bigwigs = [args.bigwigs]
         
-    dset = HiC_Dataset(self,
-                       args.root,
-                       contacts=args.contacts,
+    dset = HiC_Dataset(args.root,
+                       contacts=args.cooler_files,
                        bigwigs=args.bigwigs,
                        names=args.names,
                        target=args.target,
-                       transform=args.transform,
+                       bw_transform=args.transform,
                        pre_transform=None,
                        buffer = args.buffer,
                        chunk_size = args.chunk_size,

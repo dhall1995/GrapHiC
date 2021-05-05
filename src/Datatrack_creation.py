@@ -130,8 +130,12 @@ def evaluate_bigwigs_over_bed_dataframe(df,
     chroms = df[df.columns.values[0]].unique()
     arr = []
     for idx, bigwig in enumerate(bwpaths):
+        if verbose:
+            print(names[idx], bigwig)
         x = dtbw('x').from_bw(bigwig)
         for stype in stats_types:
+            if verbose:
+                print("\t{}".format(stype))
             vals = np.zeros(df.shape[0])
             for chrom in chroms:
                 idxs = df['chromosome']==chrom

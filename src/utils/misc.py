@@ -5,6 +5,7 @@ from typing import Dict, Optional,List
 import numpy as np
 import pandas as pd
 import torch
+from torch_geometric.data import Data
 
 def ProgressBar(iteration,
                 total,
