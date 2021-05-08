@@ -1,10 +1,13 @@
 import os
+import glob
 import itertools
 import pandas as pd
 import numpy as np
 from functools import partial
 from multiprocessing import Pool
 import cooler
+
+from sklearn.model_selection import train_test_split as tts
 
 import torch
 from torch_geometric.data import Dataset
@@ -136,9 +139,10 @@ def make_chromo_gene_graphs(
             item['prom_x'] = prom_info[chrom][jdx,:]
             torch_item = ptg_from_npy(item)
             torch.save(torch_item, 
-                       os.path.join(out_path,"data_{}_{}.pt".format(name_chr(chrom), 
-                                                                 jdx+idx
-                                                                )
+                       os.path.join(out_path,
+                                    "data_{}_{}.pt".format(name_chr(chrom),
+                                                           jdx+idx
+                                                          )
                                    )
                       )
 
@@ -157,6 +161,9 @@ class HiC_Dataset(Dataset):
                  pre_transform=None,
                  buffer = 25e4,
                  chunk_size = 500,
+                 train_test_split = 0.3,
+                 train = True,
+                 random_state=42,
                  bw_statistic_types=['mean'],
                  chromosomes = CHROMS
                 ):
@@ -189,6 +196,9 @@ class HiC_Dataset(Dataset):
         self.buffer = buffer
         self.chunk_size = chunk_size
         self.chromosomes = chromosomes
+        self.train_test_split = train_test_split
+        self.train = True
+        self.random_state = random_state
         
         #Initialise the class from the parent intialisation
         super(HiC_Dataset, self).__init__(root,
@@ -199,13 +209,23 @@ class HiC_Dataset(Dataset):
     def raw_file_names(self):
         conts = [os.path.join('contacts',item) for item in self.contacts]
         bigwigs = [os.path.join('bigwigs',item) for item in self.contacts]
-        return [self.contacts, 
-                self.bigwigs, 
-                self.target]
+        return conts + bigwigs + [self.target]
 
     @property
     def processed_file_names(self):
-        return [f'data_{idx}.pt' for idx in np.arange(self.num_objects)]
+        if self.train:
+            data_paths = [os.path.join('train',
+                                       os.path.split(item)[1]) for item in glob.glob(os.path.join(self.root,
+                                                                                                  f'processed/train/data_*.pt')
+                                                                                    )
+                         ]
+        else:
+            data_paths = [os.path.join('test',
+                                       os.path.split(item)[1]) for item in glob.glob(os.path.join(self.root,
+                                                                                                  f'processed/test/data_*.pt')
+                                                                                    )
+                         ]
+        return data_paths + ['cooler_bigwig_data.csv']
 
     def process(self):
         full_contact_paths= [os.path.join(self.root,
@@ -233,15 +253,20 @@ class HiC_Dataset(Dataset):
                                   allowed_chroms = self.chromosomes
                                  )
         
-        if self.bw_transform == "Power":
-            norm = PowerTransform_norm
-        elif self.bw_transform == "Standard":
-            norm = Standard_norm
-        elif self.bw_transform == "Robust":
-            norm = Robust_norm
-    
+        if isinstance(self.bw_transform,str):
+            if self.bw_transform == "Power":
+                norm = PowerTransform_norm
+            elif self.bw_transform == "Standard":
+                norm = Standard_norm
+            elif self.bw_transform == "Robust":
+                norm = Robust_norm
+        elif self.bw_transform is not None:
+            norm = lambda x: np.apply_along_axis(self.bw_transform,
+                                                 0,
+                                                 x)
+            
         if self.bw_transform is not None:
-            df = pd.DataFrame(data= norm(df.values),
+            df = pd.DataFrame(data= norm(df.values.astype('float')),
                               columns = df.columns,
                               index= df.index)
         
@@ -291,21 +316,35 @@ class HiC_Dataset(Dataset):
         for t_out in t_outs:
             pass
             
-        print("Renaming files")
-        jdx = 0
-        for idx, file in enumerate(glob.glob(os.path.join(self.processed_dir, 
-                                                          "*.pt"))):
+        print("Renaming files and splitting data into train and test data")
+        data_files = glob.glob(os.path.join(self.processed_dir,
+                                           "*.pt")
+                             )
+        train_files, test_files,_,_ = tts(data_files,
+                                          np.ones(len(data_files)),
+                                          test_size=self.train_test_split,
+                                          random_state=self.random_state)
+        for idx, file in enumerate(train_files):
             os.rename(file, 
                       os.path.join(self.processed_dir,
-                                   f"data_{idx}.pt")
+                                   f"train/data_{idx}.pt")
                      )
-            jdx = idx
+        for idx,file in enumerate(test_files):
+            os.rename(file, 
+                      os.path.join(self.processed_dir,
+                                   f"test/data_{idx}.pt")
+                     )
 
-        self.num_objects = jdx
+        
         
     def len(self):
         return len(self.processed_file_names)
 
     def get(self, idx):
-        data = torch.load(osp.join(self.processed_dir, 'data_{}.pt'.format(idx)))
+        if self.train:
+            data = torch.load(os.path.join(self.processed_dir,
+                                           f'train/data_{idx}.pt'))
+        else:
+            data = torch.load(os.path.join(self.processed_dir,
+                                           f'test/data_{idx}.pt'))
         return data

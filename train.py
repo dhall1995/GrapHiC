@@ -34,7 +34,6 @@ if args.use_gdc:
     data = gdc(data)
     data.edgeattr = attr
     
-'''
 class MyNet(torch.nn.Module):
     def __init__(self):
         super(Net, self).__init__()
@@ -59,27 +58,7 @@ class MyNet(torch.nn.Module):
         x = self.linear(x)
         
         return x
-'''
 
-
-
-class MyNet(torch.nn.Module):
-    def __init__(self):
-        super(MyNet, self).__init__()
-        self.conv1 = GATCEW(data.num_features, 6, heads=8,concat = True, dropout=0.6)
-        self.fc1 = torch.nn.Linear(48, 10)
-        self.linear = torch.nn.Linear(10, 1)
-
-    def forward(self):
-        #Graph Attention Layer 1
-        x = F.dropout(data.x, p=0.6, training=self.training)
-        x = F.relu(self.conv1(x, data.edge_index, edge_attr = data.edge_attr[:,0]))
-        
-        #Fully Connected Layes
-        x = F.relu(self.fc1(x))
-        x = self.linear(x)
-        
-        return x
 
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

@@ -145,7 +145,7 @@ def evaluate_bigwigs_over_bed_dataframe(df,
                               ]
                              ].values
         
-            vals[idxs.values] = x.stats(chrom,
+                vals[idxs.values] = x.stats(chrom,
                                         regs.astype('int32'),
                                         stats_type=stype)[:,0]
             arr.append(vals.astype('float'))

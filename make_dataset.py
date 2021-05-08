@@ -3,6 +3,15 @@ import numpy as np
 
 CHROMS = [f'chr{idx+1}' for idx in np.arange(19)]+['chrX']
 
+def mytransform(vec,perc=95):
+    absvec = abs(vec)
+    vperc = np.percentile(absvec[absvec>0],
+                          perc)
+    out = np.divide(vec,vperc)
+    out[out>1] = 1
+    
+    return out
+
 if __name__=="__main__":
     
     import argparse
@@ -65,7 +74,7 @@ if __name__=="__main__":
                        bigwigs=args.bigwigs,
                        names=args.names,
                        target=args.target,
-                       bw_transform=args.transform,
+                       bw_transform=mytransform,
                        pre_transform=None,
                        buffer = args.buffer,
                        chunk_size = args.chunk_size,
