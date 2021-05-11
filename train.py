@@ -1,86 +1,85 @@
-import os.path as osp
-import argparse
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import glob
+import os
+import networkx as nx
+
+from src.Dataset import HiC_Dataset
+from src.layers.WEGATConv import WEGATConv
 
 import torch
+from torch import Tensor
 import torch.nn.functional as F
-import torch_geometric.transforms as T
-from layers.GATconv import GATconv_Edge_Weighted as GATCEW
-
-from utils.datasets import pop_HiC_Dataset
-import numpy as np
-
-parser = argparse.ArgumentParser()
-parser.add_argument('--use_gdc', action='store_true',
-                    help='Use Graph Diffusion Convolution preprocessing.')
-args = parser.parse_args()
-
-path = "/home/dh486/rds/hpc-work/Hi_C_GNN/data/"
+from torch.nn import Parameter, Linear
+from torch_geometric.nn import global_mean_pool
+import torch_geometric as tgm
 
 
-dset = pop_HiC_Dataset(path,
-                       condition = 'SLX-7671_haploid',
-                       binSize = 50
-                      )
-data = dataset[0]
+bigwigs = os.listdir("Data/raw/bigwigs")
+contacts = os.listdir("Data/raw/contacts")
+target = "target.tsv"
 
-if args.use_gdc:
-    attr = data.edgeattr
-    data.edgeattr = data.edgeattr[:,0]
-    gdc = T.GDC(self_loop_weight=1, normalization_in='sym',
-                normalization_out='col',
-                diffusion_kwargs=dict(method='ppr', alpha=0.05),
-                sparsification_kwargs=dict(method='topk', k=128,
-                                           dim=0), exact=True)
-    data = gdc(data)
-    data.edgeattr = attr
-    
-class MyNet(torch.nn.Module):
-    def __init__(self):
-        super(Net, self).__init__()
-        self.conv1 = GATCEW(dataset.num_features, 6, heads=8, dropout=0.6)
-        self.conv2 = GATCEW(6 * 8, 4, heads=8, concat=True, dropout=0.6)
-        self.fc1 = torch.nn.Linear(32, 40)
-        self.fc2 = torch.nn.Linear(40, 10)
-        self.linear = torch.nn.Linear(10, 1)
+train_dset = HiC_Dataset("Data",
+                   contacts=contacts,
+                   bigwigs=bigwigs,
+                   target=target)
 
-    def forward(self):
-        #Graph Attention Layer 1
-        x = F.dropout(data.x, p=0.6, training=self.training)
-        x = F.relu(self.conv1(x, data.edge_index, edge_attr = data.edge_attr))
-        
-        #Graph Attention Layer 2
-        x = F.dropout(x, p=0.6, training=self.training)
-        x = F.relu(self.conv2(x, data.edge_index, edge_attr = data.edge_attr))
-        
-        #Fully Connected Layes
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.linear(x)
+NUMCHIP = train_dset.num_node_features
+NUMEDGE = train_dset.num_edge_features
+
+class WEGAT_Net(torch.nn.Module):
+    def __init__(self, hidden_channels):
+        super(WEGAT_Net, self).__init__()
+        torch.manual_seed(12345)
+        self.conv1 = WEGATConv(in_channels = NUMCHIP, 
+                            node_out_channels = hidden_channels, 
+                            edge_channels = NUMEDGE,
+                            edge_out_channels = NUMEDGE
+                           )
+        self.conv2 = WEGATConv(in_channels = hidden_channels, 
+                            node_out_channels = hidden_channels, 
+                            edge_channels = NUMEDGE,
+                            edge_out_channels = NUMEDGE
+                           )
+        self.conv3 = WEGATConv(in_channels = hidden_channels, 
+                            node_out_channels = hidden_channels, 
+                            edge_channels = NUMEDGE,
+                            edge_out_channels = NUMEDGE
+                           )
+        self.lin = Linear(hidden_channels, 1)
+
+    def forward(self, x, edge_index, edge_attr, batch):
+        # 1. Obtain node embeddings 
+        x, edge_attr = self.conv1(x.float(), edge_attr.float(), edge_index)
+        x = x.relu()
+        edge_attr.relu()
+        x, edge_attr = self.conv2(x, edge_attr,edge_index)
+        x = x.relu()
+        edge_attr.relu()
+        x,_ = self.conv3(x, edge_attr,edge_index)
+
+        # 2. Readout layer
+        x = global_mean_pool(x, batch)  # [batch_size, hidden_channels]
+
+        # 3. Apply a final classifier
+        x = self.lin(x)
         
         return x
 
 
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model, data = MyNet().to(device), data.to(device)
+model = WEGAT_Net().to(device)
+train_dset = train_dset.to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=5e-4)
-
-def scale(y):
-    
-    x = torch.zeros(y.shape)
-    x[y>1] = 1 + np.log(y[y>1])
-    x[y<1] = y[y<1]
-    
-    return x
-
-y = scale(data.y)
 
 
 def train():
     model.train()
     optimizer.zero_grad()
     criterion = torch.nn.MSELoss()
-    criterion(model()[data.train_mask], y[data.train_mask,None]).backward()
+    criterion(model(), y).backward()
     optimizer.step()
 
 
