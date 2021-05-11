@@ -26,7 +26,6 @@ log = logging.getLogger(__name__)
 def initialise_graph_with_metadata(cooler_file, region1, region2) -> nx.Graph:
     return nx.Graph(cooler_file=cooler_file, region1=region1, region2=region2)
 
-
 def compute_nx_graph_from_regions(
     contacts: cooler.Cooler,
     regions: Dict[str, np.ndarray],
