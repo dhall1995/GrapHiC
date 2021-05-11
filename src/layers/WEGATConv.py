@@ -103,6 +103,7 @@ class WEGATConv(MessagePassing):
         glorot(self.lin_e.weight)
         glorot(self.att_l)
         glorot(self.att_r)
+        glorot(self.att_e)
         zeros(self.bias)
 
     def forward(self, 
