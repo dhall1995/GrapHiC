@@ -17,7 +17,11 @@ OUTPATH = "/home/dh486/rds/hpc-work/GNN_Work/"
 MODELOUTNAME = "edge_weighted_GAT_initial_train.pt"
 TRAINACCOUTNAME = "train_accuracy"
 TESTACCOUTNAME = "test_accuracy"
-NUMEPOCHS = 1000
+NUMEPOCHS = 500
+BATCHSIZE = 500
+LEARNING_RATE = 0.005
+WEIGHT_DECAY = 5e-4
+
 
 bigwigs = os.listdir("Data/raw/bigwigs")
 contacts = os.listdir("Data/raw/contacts")
@@ -103,17 +107,20 @@ class WEGAT_Net(torch.nn.Module):
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model = WEGAT_Net(hidden_channels = 30).to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=5e-4)
+optimizer = torch.optim.Adam(model.parameters(), 
+                             lr=LEARNING_RATE, 
+                             weight_decay=WEIGHT_DECAY)
 criterion = torch.nn.MSELoss()
 
+#Hack for now to just load everything into memory since the graphs aren't massive
 train_dset = [torch.load(f) for f in glob.glob("Data/processed/train/*")]
 test_dset = [torch.load(f) for f in glob.glob("Data/processed/test/*")]
 
 print("Loaded datasets")
 train_loader = DataLoader(train_dset, 
-                          batch_size=500)
+                          batch_size=BATCHSIZE)
 test_loader = DataLoader(test_dset, 
-                         batch_size=500)
+                         batch_size=BATCHSIZE)
 def train(loader, 
           model, 
           optimizer, 
@@ -170,7 +177,8 @@ for epoch in range(1, NUMEPOCHS+1):
                      trainacc,
                      testacc
                     ))
-        
-torch.save(model.state_dict(), OUTNAME)
-np.save(TRAINACCOUTNAME, train_accs)
-np.save(TESTACCOUTNAME, test_accs)
+    
+    #save the updated model and running accuracies
+    torch.save(model.state_dict(), OUTNAME)
+    np.save(TRAINACCOUTNAME, train_accs)
+    np.save(TESTACCOUTNAME, test_accs)
