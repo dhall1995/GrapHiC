@@ -54,49 +54,6 @@ def split_data(df):
     
     return prom_regions, target, names, pdata
 
-def make_chunk_gene_graphs(
-    idx,
-    chunk_size,
-    shape,
-    graph_regions,
-    names,
-    target,
-    binned_data,
-    prom_data,
-    coolers,
-    chrom,
-    out_path
-):
-    if idx+chunk_size > shape:
-        lim = shape
-    else:
-        lim = idx+chunk_size
-    rdict = {chrom: graph_regions[chrom][idx:lim,:]}
-    ndict = {chrom: names[chrom][idx:lim]}
-    tdict = {chrom: target[chrom][idx:lim]}
-    prom_info = {chrom: prom_data[chrom][idx:lim,:]}
-    glist = compute_ptg_graph_from_regions(coolers,
-                                           rdict,
-                                           names = ndict,
-                                           balance = True,
-                                           join = False,
-                                           force_disjoint=False,
-                                           record_cistrans_interactions = False,
-                                           record_node_chromosome_as_onehot = False)
-    add_binned_data_to_graphlist(glist[chrom],
-                                 binned_data)
-    
-    for jdx,item in enumerate(glist[chrom]):
-        item['target'] = tdict[chrom][jdx]
-        item['prom_x'] = prom_info[chrom][jdx,:]
-        torch_item = ptg_from_npy(item)
-        torch.save(torch_item, 
-                   os.path.join(out_path,"data_{}_{}".format(name_chr(chrom), 
-                                                             jdx+idx
-                                                            )
-                               )
-                  )
-        
         
 def make_chromo_gene_graphs(
     clrs,
@@ -160,6 +117,7 @@ class HiC_Dataset(Dataset):
                  transform=None,
                  pre_transform=None,
                  buffer = 25e4,
+                 binsize = 1e4,
                  chunk_size = 500,
                  train_test_split = 0.3,
                  train = True,
@@ -194,6 +152,8 @@ class HiC_Dataset(Dataset):
         self.stats_types = bw_statistic_types
         self.bw_transform = bw_transform
         self.buffer = buffer
+        self.binsize = binsize
+        self.numnodespergraph = int((2*self.buffer)/self.binsize)+1
         self.chunk_size = chunk_size
         self.chromosomes = chromosomes
         self.train_test_split = train_test_split
@@ -309,8 +269,7 @@ class HiC_Dataset(Dataset):
                      bw_out_file,
                      pdata,
                      self.chunk_size,
-                     self.processed_dir,
-                )
+                     self.processed_dir)
         p = Pool()
         t_outs = p.imap(fn, (chrom for chrom in graph_regions))
         for t_out in t_outs:
@@ -320,20 +279,25 @@ class HiC_Dataset(Dataset):
         data_files = glob.glob(os.path.join(self.processed_dir,
                                            "*.pt")
                              )
+        for idx, file in enumerate(data_files):
+            dat = torch.load(file).x.shape[0]
+            if dat != self.numnodespergraph:
+                os.remove(file)
+        
         train_files, test_files,_,_ = tts(data_files,
                                           np.ones(len(data_files)),
                                           test_size=self.train_test_split,
                                           random_state=self.random_state)
         for idx, file in enumerate(train_files):
-            os.rename(file, 
+            os.rename(file,
                       os.path.join(self.processed_dir,
                                    f"train/data_{idx}.pt")
-                     )
+                         )
         for idx,file in enumerate(test_files):
-            os.rename(file, 
-                      os.path.join(self.processed_dir,
+            dos.rename(file,
+                       os.path.join(self.processed_dir,
                                    f"test/data_{idx}.pt")
-                     )
+                         )
 
         
         

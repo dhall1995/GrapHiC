@@ -218,12 +218,54 @@ def add_cistrans_interactions(
         
     return edge_data
 
+def add_vector_edge_weighted_self_loops(
+    edge_index: np.ndarray, 
+    edge_data: np.ndarray,
+    nodes: np.ndarray,
+    fill_value: Optional[int] = 1
+):
+    idxs = np.diff(edge_index, axis = 0) == 0
+    idxs = idxs[0,:]
+    
+    if np.sum(idxs)>0:
+        vec_add = np.mean(edge_data[idxs,:],
+                          axis = 0)
+        already_looped = edge_index[0,idxs].astype('int32')-int(np.min(nodes))
+    else:
+        vec_add = np.full(edge_data.shape[1],
+                          fill_value)
+        already_looped = np.array([],'int32')
+        
+    
+    notlooped = np.ones(nodes.shape[0])
+    notlooped[already_looped] = 0
+    
+    notlooped = np.where(notlooped)[0]
+    
+    if notlooped.shape[0]>0:
+        ei_add = np.stack([notlooped,notlooped]) + int(np.min(nodes))
+        ea_add = np.stack([vec_add for i in np.arange(notlooped.shape[0])])
+        
+        edge_index = np.append(edge_index, ei_add, axis = 1)
+        edge_data = np.append(edge_data, ea_add, axis = 0)
+    
+    return edge_index.astype('int'), edge_data
+
+
 def add_backbone_interactions(
     edge_index: np.ndarray, 
     edge_data: np.ndarray,
     nodes: np.ndarray,
-    record_backbone_interactions: Optional[bool] = True
+    record_backbone_interactions: Optional[bool] = True,
+    add_self_loops: Optional[bool] = True
 ):
+    #add in self loops that aren't present
+    if add_self_loops:
+        edge_index, edge_data = add_vector_edge_weighted_self_loops(edge_index, 
+                                                                    edge_data,
+                                                                    nodes
+                                                                   )
+    
     #Initialise backbone edge indices that need to be added in to complete the backbone
     bbone_index_to_add = []
     #Initialise a list to hold the weights for these added edges
@@ -232,6 +274,7 @@ def add_backbone_interactions(
     bbone_idxs = abs(np.diff(edge_index,
                              axis = 0)
                     ) == 1
+    
     #retrieve the edges
     bbone_edges = edge_index[
         :,bbone_idxs[0,:]
@@ -251,6 +294,10 @@ def add_backbone_interactions(
         bbone_data = np.zeros(edge_data.shape[0]
                              )
         bbone_data[bbone_idxs.T[:,0]] = 1
+        
+        self_idxs = np.diff(edge_index,
+                            axis = 0) == 0
+        bbone_data[self_idxs[0,:]] = 1
                 
     #for each possible backbone edge, check if it already exists
     #if not then add it in
@@ -265,6 +312,11 @@ def add_backbone_interactions(
                     
         bbone_index_to_add.append([sid,
                                    sid+1]
+                                 )
+        bbone_data_to_add.append([mean_weight]*edge_data.shape[1])
+        
+        bbone_index_to_add.append([sid+1,
+                                   sid]
                                  )
         bbone_data_to_add.append([mean_weight]*edge_data.shape[1])
                     
@@ -290,7 +342,9 @@ def add_backbone_interactions(
                                 bbone_data[:,None]],
                                axis = 1)
     
-    return edge_index, edge_data
+    
+    return edge_index, edge_data    
+    
 
 def _single_clr_edge_and_node_info_from_slices(
     c: cooler.Cooler, 
@@ -404,6 +458,8 @@ def _single_clr_edge_and_node_info_from_sites(
                                       axis = 0
                                      )
                 
+                edge_data[np.isnan(edge_data)] = 0
+                
             ind = np.lexsort((edge_index[0,:],edge_index[1,:]))
             edge_index = edge_index[:,ind]
             edge_data = edge_data[ind,:]
@@ -474,7 +530,8 @@ def join_multi_clr_graphs(
     clr_sub_graph_nodes: List[np.ndarray],
     backbone: Optional[bool] = True,
     record_backbone_interactions: Optional[bool] = True,
-    record_cistrans_interactions: Optional[bool] = False
+    record_cistrans_interactions: Optional[bool] = False,
+    add_self_loops: Optional[bool] = True
 ):
     edge_idxs = {}
     edge_attrs = {}
@@ -501,7 +558,9 @@ def join_multi_clr_graphs(
                     ei, ea = add_backbone_interactions(ei,
                                                        ea,
                                                        sep_sub_graph_nodes[0],
-                                                       record_backbone_interactions = record_backbone_interactions)
+                                                       record_backbone_interactions = record_backbone_interactions,
+                                                       add_self_loops = add_self_loops
+                                                      )
                     
                     
                 elif backbone and record_backbone_interactions:
@@ -532,6 +591,7 @@ def compute_ptg_graph_from_regions(
     record_cistrans_interactions: Optional[bool] = False,
     record_backbone_interactions: Optional[bool] = True,
     record_node_chromosome_as_onehot: Optional[bool] = False,
+    add_self_loops: Optional[bool] = True,
     record_names = True,
     same_index = True,
     chromosomes: Optional[list] = ["chr{}".format(str(i+1)) for i in np.arange(19)] + ['chrX']
@@ -594,7 +654,8 @@ def compute_ptg_graph_from_regions(
                                                   clr_sub_graph_nodes,
                                                   backbone = backbone,
                                                   record_backbone_interactions = record_backbone_interactions,
-                                                  record_cistrans_interactions = record_cistrans_interactions
+                                                  record_cistrans_interactions = record_cistrans_interactions,
+                                                  add_self_loops = add_self_loops
                                                  )
                 
         
@@ -663,6 +724,7 @@ def compute_ptg_graph_from_regions(
                 bin_info = c.bins()[clr_sub_graph_nodes[0][chrom][chrom][idx][0]:clr_sub_graph_nodes[0][chrom][chrom][idx][-1]+1].index.values
                 #print(bin_info, clr_sub_graph_nodes[0][chrom][chrom][idx])
                 edge_index = rename_nodes(edge_index, mynodes[0])
+
                 out_dict = {}
                 out_dict['edge_index'] = edge_index
                 out_dict['edge_attrs'] = edge_attrs[chrom][chrom][idx]
