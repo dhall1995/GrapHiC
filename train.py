@@ -13,8 +13,11 @@ import torch.nn.functional as F
 from torch.nn import Parameter, Linear
 import torch_geometric as tgm
 
-OUTNAME = "/home/dh486/rds/hpc-work/GNN_Work/test_model"
-
+OUTPATH = "/home/dh486/rds/hpc-work/GNN_Work/"
+MODELOUTNAME = "edge_weighted_GAT_initial_train.pt"
+TRAINACCOUTNAME = "train_accuracy"
+TESTACCOUTNAME = "test_accuracy"
+NUMEPOCHS = 1000
 
 bigwigs = os.listdir("Data/raw/bigwigs")
 contacts = os.listdir("Data/raw/contacts")
@@ -128,7 +131,6 @@ def train(loader,
         optimizer.step()  # Update parameters based on gradients.
         optimizer.zero_grad() # Clear gradients.
         accs.append(loss.item())
-        idx += 1
     
     return np.mean(accs)
 
@@ -152,7 +154,7 @@ def test(loader,
 
 train_accs = []
 test_accs = []
-for epoch in range(1, 3):
+for epoch in range(1, NUMEPOCHS+1):
     log = 'Epoch: {:03d}, Train: {:.4f}, Test: {:.4f}'
     trainacc = train(train_loader, 
                      model, 
@@ -170,3 +172,5 @@ for epoch in range(1, 3):
                     ))
         
 torch.save(model.state_dict(), OUTNAME)
+np.save(TRAINACCOUTNAME, train_accs)
+np.save(TESTACCOUTNAME, test_accs)
