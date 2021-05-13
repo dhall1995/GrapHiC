@@ -179,6 +179,6 @@ for epoch in range(1, NUMEPOCHS+1):
                     ))
     
     #save the updated model and running accuracies
-    torch.save(model.state_dict(), OUTNAME)
-    np.save(TRAINACCOUTNAME, train_accs)
-    np.save(TESTACCOUTNAME, test_accs)
+    torch.save(model.state_dict(), os.path.join(OUTPATH,MODELOUTNAME))
+    np.save(os.path.join(OUTPATH,TRAINACCOUTNAME), train_accs)
+    np.save(os.path.join(OUTPATH,TESTACCOUTNAME), test_accs)
