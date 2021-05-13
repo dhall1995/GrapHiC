@@ -1,16 +1,15 @@
-from __future__ import annotations
-
 from typing import Dict, List, Tuple, Optional
 
-import cooler
+from cooler import Cooler
 import numpy as np
 
 
 def parse_cooler(
-    cooler_file: Path, regions: Dict[str, np.ndarray]
+    cooler_file: str, 
+    regions: Dict[str, np.ndarray]
 ) -> Tuple[Cooler, List[np.ndarray]]:
     # Load cooler
-    c = cooler.Cooler(cooler_file)
+    c = Cooler(cooler_file)
 
     # Fetch relevant bin_ids from the cooler file
     b_ids = fetch_bins_from_cooler(cooler, regions)
@@ -67,7 +66,7 @@ def make_slices(
     regions: Dict[str, np.ndarray],
     names:Optional[dict] = {},
     force_disjoint:Optional[bool] = False
-) -> List[np.ndarray,np.ndarray]:
+) -> List[np.ndarray]:
     # Fetch relevant bin_ids from the cooler file
     b_ids, n_ids = fetch_bins_from_cooler(cooler=clr, 
                                           regions=regions, 
@@ -93,7 +92,7 @@ def make_slices(
 def make_bins(
     clr: Cooler,
     sites: Dict[str,np.ndarray],
-    names: Optional(Dict[str,str])=None
+    names: Optional[Dict[str,str]]=None
 ) -> Dict[str, np.ndarray]:
     bins = {}
     outnames = {}

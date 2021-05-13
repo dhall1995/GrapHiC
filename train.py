@@ -12,8 +12,9 @@ from torch import Tensor
 import torch.nn.functional as F
 from torch.nn import Parameter, Linear
 import torch_geometric as tgm
+from torch_geometric.data import DataLoader
 
-OUTPATH = "/home/dh486/rds/hpc-work/GNN_Work/"
+OUTPATH = "/home/dh486/rds/hpc-work/GrapHiC-ML/Data/"
 MODELOUTNAME = "edge_weighted_GAT_initial_train.pt"
 TRAINACCOUTNAME = "train_accuracy"
 TESTACCOUTNAME = "test_accuracy"
@@ -27,6 +28,7 @@ bigwigs = os.listdir("Data/raw/bigwigs")
 contacts = os.listdir("Data/raw/contacts")
 target = "target.tsv"
 
+print("Making datasets")
 train_dset = HiC_Dataset("Data",
                          contacts=contacts,
                          bigwigs=bigwigs,
@@ -39,6 +41,8 @@ test_dset = HiC_Dataset("Data",
                          target=target,
                          train=False
                         )
+
+print("Made out-of-working-memory datasets")
 
 NUMCHIP = train_dset.num_node_features
 NUMEDGE = train_dset.num_edge_features
@@ -78,7 +82,7 @@ class WEGAT_Net(torch.nn.Module):
                 edge_index, 
                 edge_attr, 
                 batch):
-        edge_attr[np.isnan(edge_attr.numpy())] = 0
+        edge_attr[torch.isnan(edge_attr)] = 0
         # 1. Obtain node embeddings 
         x, edge_attr = self.conv1(x.float(), 
                                   edge_attr.float(),
@@ -106,6 +110,7 @@ class WEGAT_Net(torch.nn.Module):
 
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f"Device:{device}")
 model = WEGAT_Net(hidden_channels = 30).to(device)
 optimizer = torch.optim.Adam(model.parameters(), 
                              lr=LEARNING_RATE, 
@@ -113,10 +118,11 @@ optimizer = torch.optim.Adam(model.parameters(),
 criterion = torch.nn.MSELoss()
 
 #Hack for now to just load everything into memory since the graphs aren't massive
-train_dset = [torch.load(f) for f in glob.glob("Data/processed/train/*")]
-test_dset = [torch.load(f) for f in glob.glob("Data/processed/test/*")]
+print("Loading datasets into working memory")
+train_dset = [torch.load(f).to(device) for f in glob.glob("Data/processed/train/*")]
+test_dset = [torch.load(f).to(device) for f in glob.glob("Data/processed/test/*")]
 
-print("Loaded datasets")
+print("Loaded in memory datasets")
 train_loader = DataLoader(train_dset, 
                           batch_size=BATCHSIZE)
 test_loader = DataLoader(test_dset, 
@@ -132,8 +138,8 @@ def train(loader,
                 data.edge_index, 
                 data.edge_attr,
                 data.batch)  # Perform a single forward pass.
-        loss = criterion(out[:,0],
-                         data.y.float())  # Compute the loss.
+        loss = criterion(10*out[:,0],
+                         10*data.y.float())  # Compute the loss.
         loss.backward()  # Derive gradients.
         optimizer.step()  # Update parameters based on gradients.
         optimizer.zero_grad() # Clear gradients.
@@ -152,8 +158,8 @@ def test(loader,
                 data.edge_index, 
                 data.edge_attr,
                 data.batch) 
-        acc = criterion(pred[:,0], 
-                        data.y)
+        acc = criterion(10*pred[:,0], 
+                        10*data.y.float())
         accs.append(acc.item())
         
     return np.mean(accs)
@@ -161,6 +167,7 @@ def test(loader,
 
 train_accs = []
 test_accs = []
+print("Running training...:")
 for epoch in range(1, NUMEPOCHS+1):
     log = 'Epoch: {:03d}, Train: {:.4f}, Test: {:.4f}'
     trainacc = train(train_loader, 

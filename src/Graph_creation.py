@@ -1,6 +1,4 @@
 """Functions for creating Chromatin Structure Graphs from HiC Data"""
-from __future__ import annotations
-
 import logging
 from typing import Dict, Optional, List
 
@@ -348,7 +346,7 @@ def add_backbone_interactions(
 
 def _single_clr_edge_and_node_info_from_slices(
     c: cooler.Cooler, 
-    slices: Dict[List[np.ndarray]], 
+    slices: Dict[str,List[np.ndarray]], 
     balance: Optional[bool] = True, 
     join: Optional[bool] = False
 ):
@@ -412,7 +410,7 @@ def _single_clr_edge_and_node_info_from_slices(
 
 def _single_clr_edge_and_node_info_from_sites(
     c: cooler.Cooler, 
-    sites: Dict[np.ndarray], 
+    sites: Dict[str,np.ndarray], 
     balance: Optional[bool] = True, 
     join: Optional[bool] = False
 ):
@@ -581,7 +579,7 @@ def join_multi_clr_graphs(
 
 #compute pytorch geometric data object from regions
 def compute_ptg_graph_from_regions(
-    contacts: List[Cooler],
+    contacts: List[str],
     regions: Dict[str, np.ndarray],
     names: Optional[dict] = {},
     balance: Optional[bool] = False,
@@ -741,7 +739,7 @@ def compute_ptg_graph_from_regions(
     
 #compute pytorch geometric data object from regions
 def compute_ptg_graph_from_sites(
-    contacts: List[Cooler],
+    contacts: List[str],
     sites: Dict[str, np.ndarray],
     names: Optional[dict] = {},
     balance: Optional[bool] = False,
