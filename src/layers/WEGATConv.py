@@ -57,9 +57,14 @@ class WEGATConv(MessagePassing):
                  edge_channels: int,
                  node_out_channels: int,
                  edge_out_channels: int,
-                 heads: int = 1, concat: bool = True,
-                 negative_slope: float = 0.2, dropout: float = 0.0,
-                 add_self_loops: bool = True, bias: bool = True, **kwargs):
+                 heads: int = 1, 
+                 concat: bool = True,
+                 negative_slope: float = 0.2, 
+                 dropout: float = 0.0,
+                 add_self_loops: bool = True, 
+                 node_bias: bool = True,
+                 edge_bias: bool = True,
+                 **kwargs):
         kwargs.setdefault('aggr', 'add')
         super(WEGATConv, self).__init__(node_dim=0, **kwargs)
 
@@ -86,12 +91,19 @@ class WEGATConv(MessagePassing):
         self.att_r = Parameter(torch.Tensor(1, heads, node_out_channels))
         self.att_e = Parameter(torch.Tensor(1, heads, edge_out_channels))
 
-        if bias and concat:
-            self.bias = Parameter(torch.Tensor(heads * node_out_channels))
-        elif bias and not concat:
-            self.bias = Parameter(torch.Tensor(node_out_channels))
+        if node_bias and concat:
+            self.node_bias = Parameter(torch.Tensor(heads * node_out_channels))
+        elif node_bias and not concat:
+            self.node_bias = Parameter(torch.Tensor(node_out_channels))
         else:
-            self.register_parameter('bias', None)
+            self.register_parameter('node_bias', None)
+            
+        if edge_bias and concat:
+            self.edge_bias = Parameter(torch.Tensor(heads * edge_out_channels))
+        elif edge_bias and not concat:
+            self.edge_bias = Parameter(torch.Tensor(edge_out_channels))
+        else:
+            self.register_parameter('edge_bias', None)
 
         self._alpha = None
 
@@ -104,7 +116,8 @@ class WEGATConv(MessagePassing):
         glorot(self.att_l)
         glorot(self.att_r)
         glorot(self.att_e)
-        zeros(self.bias)
+        zeros(self.node_bias)
+        zeros(self.edge_bias)
 
     def forward(self, 
                 x: Union[Tensor, OptPairTensor],
@@ -163,11 +176,16 @@ class WEGATConv(MessagePassing):
 
         if self.concat:
             out = out.view(-1, self.heads * self.out_channels)
+            edge_attr = out.view(-1, self.heads * self.edge_out_channels)
         else:
             out = out.mean(dim=1)
+            edge_attr = edge_attr.mean(dim=1)
 
-        if self.bias is not None:
-            out += self.bias
+        if self.node_bias is not None:
+            out += self.node_bias
+        
+        if self.edge_bias is not None:
+            edge_attr += self.edge_bias
 
         if isinstance(return_attention_weights, bool):
             assert alpha is not None
@@ -197,3 +215,4 @@ class WEGATConv(MessagePassing):
         return '{}({}, {}, heads={})'.format(self.__class__.__name__,
                                              self.in_channels,
                                              self.out_channels, self.heads)
+

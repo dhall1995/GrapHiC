@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import glob
 import os
+from sklearn.model_selection import train_test_split as tts
 
 from src.Dataset import HiC_Dataset
 from src.layers.WEGATConv import WEGATConv
@@ -10,19 +11,25 @@ from src.layers.WEGATConv import WEGATConv
 import torch
 from torch import Tensor
 import torch.nn.functional as F
-from torch.nn import Parameter, Linear
+from torch.nn import Parameter, Linear, Sequential
 import torch_geometric as tgm
 from torch_geometric.data import DataLoader
+from torch_geometric.nn import TopKPooling as TKP
+from torch_geometric.nn import global_max_pool
+
+# Where to add a new import
+from torch.optim.lr_scheduler import StepLR
 
 OUTPATH = "/home/dh486/rds/hpc-work/GrapHiC-ML/Data/"
 MODELOUTNAME = "edge_weighted_GAT_initial_train.pt"
 TRAINACCOUTNAME = "train_accuracy"
 TESTACCOUTNAME = "test_accuracy"
-NUMEPOCHS = 500
+NUMEPOCHS = 2000
 BATCHSIZE = 500
-LEARNING_RATE = 0.005
+LEARNING_RATE = 0.05
 WEIGHT_DECAY = 5e-4
-
+RANDOM_STATE = 42
+TEST_SIZE = 0.25
 
 bigwigs = os.listdir("Data/raw/bigwigs")
 contacts = os.listdir("Data/raw/contacts")
@@ -48,62 +55,136 @@ NUMCHIP = train_dset.num_node_features
 NUMEDGE = train_dset.num_edge_features
 NUMNODESPERGRAPH = train_dset.numnodespergraph
 
-def get_middle_features(x,
-                        numnodes_per_graph):
-    mid = int(0.5*(numnodes_per_graph-1))
-    idxs = np.arange(mid,
-                     x.shape[0],
-                     numnodes_per_graph)
-    return x[idxs,:]
 
 class WEGAT_Net(torch.nn.Module):
-    def __init__(self, hidden_channels):
+    def __init__(self, 
+                 hidden_channels,
+                 heads = 4,
+                 num_fc = 5,
+                 fc_channels = [15,15,10,5,2],
+                 num_prom_fc = 5,
+                 prom_fc_channels = [15,15,10,5,2]
+                ):
+        if isinstance(fc_channels,int):
+            fc_channels = [fc_channels]*num_fc
+        elif len(fc_channels) != num_fc:
+            print("number of fully connected channels must match the number of fully connected layers")
+            raise
+            
+        if isinstance(prom_fc_channels,int):
+            prom_fc_channels = [prom_fc_channels]*num_prom_fc
+        elif len(prom_fc_channels) != num_prom_fc:
+            raise
+        
         super(WEGAT_Net, self).__init__()
         torch.manual_seed(12345)
         self.conv1 = WEGATConv(in_channels = NUMCHIP, 
-                            node_out_channels = hidden_channels, 
-                            edge_channels = NUMEDGE,
-                            edge_out_channels = NUMEDGE
-                           )
-        self.conv2 = WEGATConv(in_channels = hidden_channels, 
-                            node_out_channels = hidden_channels, 
-                            edge_channels = NUMEDGE,
-                            edge_out_channels = NUMEDGE
-                           )
-        self.conv3 = WEGATConv(in_channels = hidden_channels, 
-                            node_out_channels = hidden_channels, 
-                            edge_channels = NUMEDGE,
-                            edge_out_channels = NUMEDGE
-                           )
-        self.lin = Linear(hidden_channels, 1)
+                               node_out_channels = hidden_channels,
+                               edge_channels = NUMEDGE,
+                               edge_out_channels = NUMEDGE,
+                               heads = heads,
+                               concat = False
+                              )
+        self.pool1 = TKP(in_channels = hidden_channels)
+        self.conv2 = WEGATConv(in_channels = hidden_channels,
+                               node_out_channels = hidden_channels,
+                               edge_channels = NUMEDGE,
+                               edge_out_channels = NUMEDGE,
+                               heads = heads,
+                               concat = False
+                              )
+        self.pool2 = TKP(in_channels = hidden_channels)
+        self.conv3 = WEGATConv(in_channels = hidden_channels,
+                               node_out_channels = hidden_channels,
+                               edge_channels = NUMEDGE,
+                               edge_out_channels = NUMEDGE,
+                               heads = heads,
+                               concat = False
+                              )
+        self.pool3 = TKP(in_channels = hidden_channels)
+
+        fc_channels = [hidden_channels]+fc_channels
+        lin = []
+        for idx in torch.arange(num_fc):
+            lin.append(Linear(fc_channels[idx],fc_channels[idx+1]))
+            lin.append(torch.nn.ReLU())
+
+        self.lin = Sequential(*lin)
+        self.num_fc = num_fc
+        
+        prom_fc_channels = [NUMCHIP]+prom_fc_channels
+        linprom = []
+        for idx in torch.arange(num_prom_fc):
+            linprom.append(Linear(prom_fc_channels[idx],prom_fc_channels[idx+1]))
+            linprom.append(torch.nn.ReLU())
+
+        self.linprom = Sequential(*linprom)
+        self.num_prom_fc = num_prom_fc
+        
+        
+        self.readout = Linear(prom_fc_channels[-1]+fc_channels[-1], 1)
 
     def forward(self, 
-                x, 
+                x,
                 edge_index, 
-                edge_attr, 
+                edge_attr,
+                prom_x,
                 batch):
+        prom_x = prom_x.view(-1,NUMCHIP).float()
+        
         edge_attr[torch.isnan(edge_attr)] = 0
-        # 1. Obtain node embeddings 
+        #superlayer 1
         x, edge_attr = self.conv1(x.float(), 
                                   edge_attr.float(),
                                   edge_index)
+        #nonlinearity
         x = x.relu()
         edge_attr.relu()
-        x, edge_attr = self.conv2(x, 
+        #pooling
+        x, edge_index, edge_attr, batch,perm,score = self.pool1(x,
+                                                                edge_index,
+                                                                edge_attr = edge_attr,
+                                                                batch = batch)
+                                                                 
+        #superlayer 2
+        x, edge_attr = self.conv2(x,
                                   edge_attr,
                                   edge_index)
+        #nonlinearity
         x = x.relu()
         edge_attr.relu()
-        x,_ = self.conv3(x, 
-                         edge_attr,
-                         edge_index)
-
-        # 2. Readout layer
-        x = get_middle_features(x, 
-                                NUMNODESPERGRAPH)
+        #pooling
+        x, edge_index, edge_attr,batch,perm,score = self.pool2(x,
+                                                               edge_index,
+                                                               edge_attr = edge_attr,
+                                                               batch = batch)
         
-        # 3. Apply a final classifier
+        #superlayer 3
+        x,_ = self.conv3(x,
+                        edge_attr,
+                        edge_index)
+        #nonlinearity
+        x = x.relu()
+        edge_attr = edge_attr.relu()
+        #pooling
+        x, edge_index, edge_attr, batch, perm, score = self.pool3(x,
+                                                                 edge_index,
+                                                                 edge_attr = edge_attr,
+                                                                 batch = batch)
+
+        #global pooling
+        x = global_max_pool(x,batch=batch)
+
+        # 3. Apply fully connected linear layers to graph
         x = self.lin(x)
+        
+        # 3. Apply fully connected linear layers to promoter
+        prom_x = self.linprom(prom_x)
+        
+        # 4. Apply readout layers 
+        x = self.readout(torch.cat([x,prom_x],
+                                   dim = 1)
+                        )
         
         return x
 
@@ -111,22 +192,42 @@ class WEGAT_Net(torch.nn.Module):
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Device:{device}")
-model = WEGAT_Net(hidden_channels = 30).to(device)
-optimizer = torch.optim.Adam(model.parameters(), 
-                             lr=LEARNING_RATE, 
-                             weight_decay=WEIGHT_DECAY)
-criterion = torch.nn.MSELoss()
 
 #Hack for now to just load everything into memory since the graphs aren't massive
 print("Loading datasets into working memory")
-train_dset = [torch.load(f).to(device) for f in glob.glob("Data/processed/train/*")]
-test_dset = [torch.load(f).to(device) for f in glob.glob("Data/processed/test/*")]
+#dset1 = [torch.load(f).to(device) for f in glob.glob("Data/processed/train/*")]
+#dset2 = [torch.load(f).to(device) for f in glob.glob("Data/processed/test/*")]
+#dset = dset1+dset2
+
+dset = torch.load("Data/test_dset_18features_custom_norm.pt")
+
+train_dset, test_dset,_,_ = tts(dset,
+                                  torch.ones(len(dset)),
+                                  test_size=TEST_SIZE,
+                                  random_state=RANDOM_STATE)
+
+train_dset = [item.to(device) for item in train_dset]
+test_dset = [item.to(device) for item in test_dset]
 
 print("Loaded in memory datasets")
 train_loader = DataLoader(train_dset, 
                           batch_size=BATCHSIZE)
 test_loader = DataLoader(test_dset, 
                          batch_size=BATCHSIZE)
+
+model = WEGAT_Net(hidden_channels = 18).to(device)
+for lin in model.lin:
+    lin.to(device)
+for plin in model.linprom:
+    plin.to(device)
+
+optimizer = torch.optim.Adam(model.parameters(),
+                             lr = LEARNING_RATE,
+                             weight_decay = WEIGHT_DECAY)
+
+criterion = torch.nn.MSELoss()
+
+
 def train(loader, 
           model, 
           optimizer, 
@@ -137,13 +238,14 @@ def train(loader,
         out = model(data.x, 
                 data.edge_index, 
                 data.edge_attr,
+                data.prom_x,
                 data.batch)  # Perform a single forward pass.
         loss = criterion(10*out[:,0],
                          10*data.y.float())  # Compute the loss.
         loss.backward()  # Derive gradients.
         optimizer.step()  # Update parameters based on gradients.
         optimizer.zero_grad() # Clear gradients.
-        accs.append(loss.item())
+        accs.append(loss.item()/100)
     
     return np.mean(accs)
 
@@ -157,16 +259,18 @@ def test(loader,
         pred = model(data.x, 
                 data.edge_index, 
                 data.edge_attr,
+                data.prom_x,
                 data.batch) 
         acc = criterion(10*pred[:,0], 
                         10*data.y.float())
-        accs.append(acc.item())
+        accs.append(acc.item()/100)
         
     return np.mean(accs)
 
 
 train_accs = []
 test_accs = []
+scheduler = StepLR(optimizer, step_size=3, gamma=0.95)
 print("Running training...:")
 for epoch in range(1, NUMEPOCHS+1):
     log = 'Epoch: {:03d}, Train: {:.4f}, Test: {:.4f}'
@@ -184,6 +288,8 @@ for epoch in range(1, NUMEPOCHS+1):
                      trainacc,
                      testacc
                     ))
+    # Decay Learning Rate
+    scheduler.step()
     
     #save the updated model and running accuracies
     torch.save(model.state_dict(), os.path.join(OUTPATH,MODELOUTNAME))

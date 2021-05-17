@@ -6,4 +6,6 @@ test_scripts/*
 test_scripts
 .ipynb_checkpoints/*
 __pycache__/*
+*dtrack_utils.c*
+src/utils/build
 
