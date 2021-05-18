@@ -17,7 +17,6 @@ from torch_geometric.data import DataLoader
 from torch_geometric.nn import TopKPooling as TKP
 from torch_geometric.nn import global_max_pool
 
-# Where to add a new import
 from torch.optim.lr_scheduler import StepLR
 
 OUTPATH = "/home/dh486/rds/hpc-work/GrapHiC-ML/Data/"
@@ -28,7 +27,7 @@ NUMEPOCHS = 2000
 BATCHSIZE = 500
 LEARNING_RATE = 0.05
 WEIGHT_DECAY = 5e-4
-RANDOM_STATE = 42
+RANDOM_STATE = 40
 TEST_SIZE = 0.25
 
 bigwigs = os.listdir("Data/raw/bigwigs")
@@ -191,7 +190,7 @@ class WEGAT_Net(torch.nn.Module):
 
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print(f"Device:{device}")
+print(f"Device: {device}")
 
 #Hack for now to just load everything into memory since the graphs aren't massive
 print("Loading datasets into working memory")
@@ -206,6 +205,8 @@ train_dset, test_dset,_,_ = tts(dset,
                                   test_size=TEST_SIZE,
                                   random_state=RANDOM_STATE)
 
+print(len(train_dset), len(test_dset))
+
 train_dset = [item.to(device) for item in train_dset]
 test_dset = [item.to(device) for item in test_dset]
 
@@ -216,10 +217,6 @@ test_loader = DataLoader(test_dset,
                          batch_size=BATCHSIZE)
 
 model = WEGAT_Net(hidden_channels = 18).to(device)
-for lin in model.lin:
-    lin.to(device)
-for plin in model.linprom:
-    plin.to(device)
 
 optimizer = torch.optim.Adam(model.parameters(),
                              lr = LEARNING_RATE,
@@ -240,12 +237,12 @@ def train(loader,
                 data.edge_attr,
                 data.prom_x,
                 data.batch)  # Perform a single forward pass.
-        loss = criterion(10*out[:,0],
-                         10*data.y.float())  # Compute the loss.
+        loss = criterion(out[:,0],
+                         data.y.float())  # Compute the loss.
         loss.backward()  # Derive gradients.
         optimizer.step()  # Update parameters based on gradients.
         optimizer.zero_grad() # Clear gradients.
-        accs.append(loss.item()/100)
+        accs.append(loss.item())
     
     return np.mean(accs)
 
@@ -261,9 +258,9 @@ def test(loader,
                 data.edge_attr,
                 data.prom_x,
                 data.batch) 
-        acc = criterion(10*pred[:,0], 
-                        10*data.y.float())
-        accs.append(acc.item()/100)
+        acc = criterion(pred[:,0], 
+                        data.y.float())
+        accs.append(acc.item())
         
     return np.mean(accs)
 
