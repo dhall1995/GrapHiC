@@ -175,11 +175,7 @@ def train(loader,
     model.train()
     accs = []
     for data in loader:
-        out = model(data.x, 
-                data.edge_index, 
-                data.edge_attr,
-                data.prom_x,
-                data.batch)  # Perform a single forward pass.
+        out = model(data)  # Perform a single forward pass.
         loss = criterion(out[:,0],data.y.float())  # Compute the loss.
         loss.backward(retain_graph=True)  # Derive gradients.
         optimizer.step()  # Update parameters based on gradients.
@@ -195,11 +191,7 @@ def test(loader,
     
     accs = []
     for data in loader:
-        pred = model(data.x, 
-                data.edge_index, 
-                data.edge_attr,
-                data.prom_x,
-                data.batch)
+        pred = model(data)
         acc = criterion(pred[:,0],data.y.float())
         accs.append(acc.item())
         

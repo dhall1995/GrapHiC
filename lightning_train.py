@@ -140,7 +140,7 @@ class WEGATModule(torch.nn.Module):
         
     def forward(self, 
                 batch):
-        barch.prom_x = batch.prom_x.view(-1,self.numchip).float()
+        batch.prom_x = batch.prom_x.view(-1,self.numchip).float()
         batch.edge_attr[torch.isnan(batch.edge_attr)] = 0
         batch.x[torch.isnan(batch.x)] = 0
         batch.prom_x[torch.isnan(batch.prom_x)] = 0
@@ -179,11 +179,7 @@ class LitWEGATNet(pl.LightningModule):
         self.weight_decay = weight_decay
     
     def shared_step(self, batch):
-        pred = self.WEGATModule(batch.x, 
-                             batch.edge_index, 
-                             batch.edge_attr,
-                             batch.prom_x,
-                             batch.batch)
+        pred = self.WEGATModule(batch)
         
         loss = F.l1_loss(pred[:,0],
                          batch.y.float())
@@ -231,12 +227,10 @@ def main(hparams):
 
     print("Loaded in memory datasets")
     train_loader = DataLoader(train_dset, 
-                              batch_size=hparams.batchsize,
-                              num_workers=20
+                              batch_size=hparams.batchsize
                              )
     val_loader = DataLoader(val_dset, 
-                             batch_size=hparams.batchsize,
-                            num_workers=20
+                             batch_size=hparams.batchsize
                            )
 
 
