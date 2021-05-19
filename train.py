@@ -25,7 +25,7 @@ TRAINACCOUTNAME = "train_accuracy"
 TESTACCOUTNAME = "test_accuracy"
 NUMEPOCHS = 2000
 BATCHSIZE = 500
-LEARNING_RATE = 0.05
+LEARNING_RATE = 0.00005
 WEIGHT_DECAY = 5e-4
 RANDOM_STATE = 40
 TEST_SIZE = 0.25
@@ -52,8 +52,6 @@ print("Made out-of-working-memory datasets")
 
 NUMCHIP = train_dset.num_node_features
 NUMEDGE = train_dset.num_edge_features
-NUMNODESPERGRAPH = train_dset.numnodespergraph
-
 
 class WEGAT_Net(torch.nn.Module):
     def __init__(self, 
@@ -77,6 +75,8 @@ class WEGAT_Net(torch.nn.Module):
         
         super(WEGAT_Net, self).__init__()
         torch.manual_seed(12345)
+
+        self.loglikelihood_precision = Parameter(torch.tensor(0.))
         self.conv1 = WEGATConv(in_channels = NUMCHIP, 
                                node_out_channels = hidden_channels,
                                edge_channels = NUMEDGE,
@@ -166,7 +166,7 @@ class WEGAT_Net(torch.nn.Module):
         x = x.relu()
         edge_attr = edge_attr.relu()
         #pooling
-        x, edge_index, edge_attr, batch, perm, score = self.pool3(x,
+        x, edge_index, edge_attr, batch, perm,score = self.pool3(x,
                                                                  edge_index,
                                                                  edge_attr = edge_attr,
                                                                  batch = batch)
@@ -205,7 +205,6 @@ train_dset, test_dset,_,_ = tts(dset,
                                   test_size=TEST_SIZE,
                                   random_state=RANDOM_STATE)
 
-print(len(train_dset), len(test_dset))
 
 train_dset = [item.to(device) for item in train_dset]
 test_dset = [item.to(device) for item in test_dset]
@@ -222,7 +221,7 @@ optimizer = torch.optim.Adam(model.parameters(),
                              lr = LEARNING_RATE,
                              weight_decay = WEIGHT_DECAY)
 
-criterion = torch.nn.MSELoss()
+criterion = torch.nn.L1Loss()
 
 
 def train(loader, 
@@ -231,20 +230,20 @@ def train(loader,
           criterion):
     model.train()
     accs = []
+    precision = torch.exp(model.loglikelihood_precision)
     for data in loader:
         out = model(data.x, 
                 data.edge_index, 
                 data.edge_attr,
                 data.prom_x,
                 data.batch)  # Perform a single forward pass.
-        loss = criterion(out[:,0],
-                         data.y.float())  # Compute the loss.
-        loss.backward()  # Derive gradients.
+        loss = precision*criterion(out[:,0],data.y.float()) - BATCHSIZE*model.loglikelihood_precision  # Compute the loss.
+        loss.backward(retain_graph=True)  # Derive gradients.
         optimizer.step()  # Update parameters based on gradients.
         optimizer.zero_grad() # Clear gradients.
         accs.append(loss.item())
     
-    return np.mean(accs)
+    return accs
 
 def test(loader, 
          model, 
@@ -252,22 +251,21 @@ def test(loader,
     model.eval()
     
     accs = []
+    precision = torch.exp(model.loglikelihood_precision)
     for data in loader:
         pred = model(data.x, 
                 data.edge_index, 
                 data.edge_attr,
                 data.prom_x,
-                data.batch) 
-        acc = criterion(pred[:,0], 
-                        data.y.float())
+                data.batch)
+        acc = precision*criterion(pred[:,0],data.y.float()) - BATCHSIZE*model.loglikelihood_precision
         accs.append(acc.item())
         
-    return np.mean(accs)
+    return accs
 
 
 train_accs = []
 test_accs = []
-scheduler = StepLR(optimizer, step_size=3, gamma=0.95)
 print("Running training...:")
 for epoch in range(1, NUMEPOCHS+1):
     log = 'Epoch: {:03d}, Train: {:.4f}, Test: {:.4f}'
@@ -282,11 +280,10 @@ for epoch in range(1, NUMEPOCHS+1):
     train_accs.append(trainacc)
     test_accs.append(testacc)
     print(log.format(epoch, 
-                     trainacc,
-                     testacc
-                    ))
-    # Decay Learning Rate
-    scheduler.step()
+                     np.mean(trainacc),
+                     np.mean(testacc)
+                   ))
+
     
     #save the updated model and running accuracies
     torch.save(model.state_dict(), os.path.join(OUTPATH,MODELOUTNAME))

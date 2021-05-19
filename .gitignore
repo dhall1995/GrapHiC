@@ -8,4 +8,6 @@ test_scripts
 __pycache__/*
 *dtrack_utils.c*
 src/utils/build
+runs/*
+runs
 
