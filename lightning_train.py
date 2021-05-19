@@ -170,6 +170,8 @@ LIGHTNING NET
 class LitWEGATNet(pl.LightningModule):
     def __init__(self,
                  module,
+                 train_loader,
+                 val_loader,
                  learning_rate,
                  weight_decay
                 ):
@@ -177,7 +179,15 @@ class LitWEGATNet(pl.LightningModule):
         self.WEGATModule = module
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
+        self.train_loader = train_loader
+        self.val_loader = val_loader
     
+    def train_dataloader(self):
+        return self.train_loader
+    def validation_dataloader(self):
+        return self.test_loader
+
+
     def shared_step(self, batch):
         pred = self.WEGATModule(batch)
         
@@ -244,7 +254,9 @@ def main(hparams):
                       numchip = NUMCHIP,
                       numedge = NUMEDGE
                      )
-    Net = LitWEGATNet(module, 
+    Net = LitWEGATNet(module,
+                      train_loader,
+                      val_loader,
                       hparams.learning_rate, 
                       hparams.weight_decay)
 
@@ -252,7 +264,28 @@ def main(hparams):
     trainer = pl.Trainer(gpus=hparams.gpus, 
                          max_epochs=hparams.epochs, 
                          progress_bar_refresh_rate=20,
-                         logger=tb_logger)
+                         logger=tb_logger,
+                         auto_lr_find=hparams.auto_lr_find,
+                         resume_from_checkpoint=hparams.checkpoint
+                         )
+    if hparams.auto_lr_find:
+        # Run learning rate finder
+        lr_finder = trainer.tuner.lr_find(Net)
+
+        # Results can be found in
+        lr_finder.results
+
+        # Plot with
+        if hparams.plot_lr:
+            fig = lr_finder.plot(suggest=True)
+            fig.savefig("learning_rate_suggestion.png", format = 'png')
+
+        # Pick point based on plot, or get suggestion
+        new_lr = lr_finder.suggestion()
+
+        # update hparams of the model
+        Net.hparams.lr = new_lr
+
     trainer.fit(Net, train_loader, val_loader)
     
 
@@ -260,30 +293,50 @@ if __name__ == '__main__':
     from argparse import ArgumentParser
     parser = ArgumentParser()
     parser.add_argument('-g',
-                        '--gpus', 
+                        '--gpus',
+                        type = int,
                         default=1)
     parser.add_argument('-hidden',
                         '--hiddenlayers',
+                        type = int,
                         default=15)
     parser.add_argument('-e',
                         '--epochs',
+                        type = int,
                         default=NUMEPOCHS)
     parser.add_argument('-l',
                         '--logdir',
+                        type = str,
                         default='runs/')
     parser.add_argument('-b',
                         '--batchsize',
+                        type = int,
                         default=BATCHSIZE)
     parser.add_argument('-d',
                         '--dataset',
+                        type = str,
                         default=DATASET)
     parser.add_argument('-t',
                         '--trainfraction',
+                        type = float,
                         default=0.7)
     parser.add_argument('--learning_rate',
+                        type = float,
                         default=LEARNING_RATE)
     parser.add_argument('--weight_decay',
+                        type = float,
                         default=WEIGHT_DECAY)
+    parser.add_argument('-c',
+                        '--checkpoint',
+                        default=None)
+    parser.add_argument('-alr',
+                        '--auto_lr_find',
+                        type = bool,
+                        default=False)
+    parser.add_argument('-plr',
+                        '--plot_lr',
+                        type = bool,
+                        default=False)
     args = parser.parse_args()
 
     main(args)            
