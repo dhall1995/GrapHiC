@@ -1,7 +1,9 @@
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import glob
 import os
+from sklearn.model_selection import train_test_split as tts
 
 from src.Dataset import HiC_Dataset
 from src.layers.WEGATConv import WEGATConv
@@ -10,22 +12,23 @@ import torch
 from torch import Tensor
 import torch.nn.functional as F
 from torch.nn import Parameter, Linear, Sequential
-from torch.utils.data import random_split
-
 import torch_geometric as tgm
 from torch_geometric.data import DataLoader
 from torch_geometric.nn import TopKPooling as TKP
 from torch_geometric.nn import global_max_pool
 
-import pytorch_lightning as pl
-from pytorch_lightning import loggers as pl_loggers
 
+OUTPATH = "/home/dh486/rds/hpc-work/GrapHiC-ML/Data/"
 DATASET = "Data/test_dset_18features_custom_norm.pt"
-NUMEPOCHS = 10
+MODELOUTNAME = "edge_weighted_GAT_initial_train.pt"
+TRAINACCOUTNAME = "train_accuracy"
+TESTACCOUTNAME = "test_accuracy"
+NUMEPOCHS = 2000
 BATCHSIZE = 500
 LEARNING_RATE = 0.00005
 WEIGHT_DECAY = 5e-4
-MANUAL_SEED = 40
+RANDOM_STATE = 40
+TRAIN_FRACTION = 0.7
 
 '''
 COMBINED 'WEIGHTED EDGE GRAPH ATTENTION' + 'TOP K POOLING LAYERS' 
@@ -60,9 +63,7 @@ class WEGAT_TOPK_Conv(torch.nn.Module):
                                                                                            batch = dat['batch'])
         
         return dat
-        
-
-
+    
 '''
 WEIGHTED EDGE GRAPH ATTENTION MODULE
 '''
@@ -97,7 +98,6 @@ class WEGATModule(torch.nn.Module):
         super().__init__()
         torch.manual_seed(12345)
 
-        self.loglikelihood_precision = Parameter(torch.tensor(0.))
         gconv = [WEGAT_TOPK_Conv(node_inchannels = numchip, 
                              node_outchannels = hidden_channels,
                              edge_inchannels = numedge,
@@ -174,58 +174,53 @@ class WEGATModule(torch.nn.Module):
         
         return x
 
-'''
-LIGHTNING NET
-'''
-class LitWEGATNet(pl.LightningModule):
-    def __init__(self,
-                 module,
-                 learning_rate,
-                 weight_decay
-                ):
-        super().__init__()
-        self.WEGATModule = module
-        self.learning_rate = learning_rate
-        self.weight_decay = weight_decay
+
+def train(loader, 
+          model, 
+          optimizer, 
+          criterion):
+    model.train()
+    accs = []
+    for data in loader:
+        out = model(data.x, 
+                data.edge_index, 
+                data.edge_attr,
+                data.prom_x,
+                data.batch)  # Perform a single forward pass.
+        loss = criterion(out[:,0],data.y.float())  # Compute the loss.
+        loss.backward(retain_graph=True)  # Derive gradients.
+        optimizer.step()  # Update parameters based on gradients.
+        optimizer.zero_grad() # Clear gradients.
+        accs.append(loss.item())
     
-    def shared_step(self, batch):
-        pred = self.WEGATModule(batch.x, 
-                             batch.edge_index, 
-                             batch.edge_attr,
-                             batch.prom_x,
-                             batch.batch)
+    return accs
+
+def test(loader, 
+         model, 
+         criterion):
+    model.eval()
+    
+    accs = []
+    for data in loader:
+        pred = model(data.x, 
+                data.edge_index, 
+                data.edge_attr,
+                data.prom_x,
+                data.batch)
+        acc = criterion(pred[:,0],data.y.float())
+        accs.append(acc.item())
         
-        loss = F.l1_loss(pred[:,0],
-                         batch.y.float())
-        return loss
-    
-    def training_step(self, batch, batch_idx):
-        loss = self.shared_step(batch)
-        self.log('train_loss', loss)
-        return loss
-    
-    def validation_step(self, batch, batch_idx):
-        loss = self.shared_step(batch)
-        self.log('val_loss', loss)
-        return loss
-    
-    def test_step(self, batch, batch_idx):
-        loss = self.shared_step(batch)
-        self.log('test_loss', loss)
-        return loss     
-    
-    def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), 
-                                     lr=self.learning_rate,
-                                     weight_decay = self.weight_decay
-                                    )
-        return optimizer
-    
-    
-'''
-MAIN FUNCTION
-'''    
+    return accs
+
 def main(hparams):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Device: {device}")
+
+    #Hack for now to just load everything into memory since the graphs aren't massive
+    #print("Loading datasets into working memory")
+    #dset1 = [torch.load(f).to(device) for f in glob.glob("Data/processed/train/*")]
+    #dset2 = [torch.load(f).to(device) for f in glob.glob("Data/processed/test/*")]
+    #dset = dset1+dset2
     '''
     CONSTRUCTING THE DATALOADERS
     '''
@@ -256,28 +251,49 @@ def main(hparams):
     NUMCHIP = dset[0].x.shape[1]
     NUMEDGE = dset[0].edge_attr.shape[1]
     
-    module = WEGATModule(hidden_channels = hparams.hiddenlayers,
+    model = WEGATModule(hidden_channels = hparams.hiddenlayers,
                       numchip = NUMCHIP,
                       numedge = NUMEDGE
                      )
-    Net = LitWEGATNet(module, 
-                      hparams.learning_rate, 
-                      hparams.weight_decay)
 
-    tb_logger = pl_loggers.TensorBoardLogger(hparams.logdir)
-    trainer = pl.Trainer(gpus=hparams.gpus, 
-                         max_epochs=hparams.epochs, 
-                         progress_bar_refresh_rate=20,
-                         logger=tb_logger)
-    trainer.fit(Net, train_loader, val_loader)
+    optimizer = torch.optim.Adam(model.parameters(),
+                             lr = hparams.learning_rate,
+                             weight_decay = hparams.weight_decay)
+
+    criterion = torch.nn.L1Loss()
+
+    train_accs = []
+    test_accs = []
+    print("Running training...:")
+    for epoch in range(1, hparams.epochs+1):
+        log = 'Epoch: {:03d}, Train: {:.4f}, Test: {:.4f}'
+        trainacc = train(train_loader, 
+                     model, 
+                     optimizer, 
+                     criterion)
+        testacc = test(test_loader,
+                    model,
+                    criterion
+                   )
+        train_accs.append(trainacc)
+        test_accs.append(testacc)
+        print(log.format(epoch, 
+                     np.mean(trainacc),
+                     np.mean(testacc)
+                   ))
+
     
+        #save the updated model and running accuracies
+        torch.save(model.state_dict(), os.path.join(hparams.outpath,
+                                                    hparams.modelname))
+        np.save(os.path.join(hparams.outpath,
+                             hparams.trainaccname), train_accs)
+        np.save(os.path.join(hparams.outpath,
+                             hparams.testaccname), test_accs)
 
 if __name__ == '__main__':
     from argparse import ArgumentParser
     parser = ArgumentParser()
-    parser.add_argument('-g',
-                        '--gpus', 
-                        default=1)
     parser.add_argument('-hidden',
                         '--hiddenlayers',
                         default=15)
@@ -295,13 +311,20 @@ if __name__ == '__main__':
                         default=DATASET)
     parser.add_argument('-t',
                         '--trainfraction',
-                        default=0.7)
+                        default=TRAIN_FRACTION)
+    parser.add_argument('-o',
+                        '--outpath',
+                        default=OUTPATH)
+    parser.add_argument('--modelname',
+                        default=MODELOUTNAME)
+    parser.add_argument('--testaccname',
+                        default=TESTACCOUTNAME)
+    parser.add_argument('--trainaccname',
+                        default=TRAINACCOUTNAME)
     parser.add_argument('--learning_rate',
                         default=LEARNING_RATE)
     parser.add_argument('--weight_decay',
                         default=WEIGHT_DECAY)
     args = parser.parse_args()
 
-    main(args)            
-            
-            
+    main(args)      
