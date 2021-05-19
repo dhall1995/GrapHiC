@@ -51,19 +51,21 @@ class WEGAT_TOPK_Conv(torch.nn.Module):
         self.pool = TKP(in_channels = node_outchannels)
         
     def forward(self, 
-                dat):
-        dat['x'], dat['edge_attr'] = self.conv(dat['x'].float(),
-                                               dat['edge_attr'].float(),
-                                               dat['edge_index'])
-        dat['x'] = dat['x'].relu()
-        dat['edge_attr'] = dat['edge_attr'].relu()
-        dat['x'], dat['edge_index'], dat['edge_attr'], dat['batch'], perm,score = self.pool(dat['x'],
-                                                                                           dat['edge_index'],
-                                                                                           edge_attr = dat['edge_attr'],
-                                                                                           batch = dat['batch'])
+                batch):
+        batch.x, batch.edge_attr = self.conv(batch.x.float(),
+                                             batch.edge_attr.float(),
+                                             batch.edge_index)
+        batch.x = batch.x.relu()
+        batch.edge_attr = batch.edge_attr.relu()
+        batch.x, batch.edge_index, batch.edge_attr, batch.batch, perm,score = self.pool(batch.x,
+                                                                                        batch.edge_index,
+                                                                                        edge_attr = batch.edge_attr,
+                                                                                        batch = batch.batch)
         
-        return dat
-    
+        return batch
+        
+
+
 '''
 WEIGHTED EDGE GRAPH ATTENTION MODULE
 '''
@@ -98,6 +100,7 @@ class WEGATModule(torch.nn.Module):
         super().__init__()
         torch.manual_seed(12345)
 
+        self.loglikelihood_precision = Parameter(torch.tensor(0.))
         gconv = [WEGAT_TOPK_Conv(node_inchannels = numchip, 
                              node_outchannels = hidden_channels,
                              edge_inchannels = numedge,
@@ -139,33 +142,23 @@ class WEGATModule(torch.nn.Module):
         self.readout = Linear(prom_fc_channels[-1]+fc_channels[-1], 1)
         
     def forward(self, 
-                x,
-                edge_index, 
-                edge_attr,
-                prom_x,
                 batch):
-        prom_x = prom_x.view(-1,self.numchip).float()
-        edge_attr[torch.isnan(edge_attr)] = 0
-        x[torch.isnan(x)] = 0
-        prom_x[torch.isnan(prom_x)] = 0
+        barch.prom_x = batch.prom_x.view(-1,self.numchip).float()
+        batch.edge_attr[torch.isnan(batch.edge_attr)] = 0
+        batch.x[torch.isnan(batch.x)] = 0
+        batch.prom_x[torch.isnan(batch.prom_x)] = 0
         
-        dat = {}
-        dat['x'] = x
-        dat['edge_index'] = edge_index
-        dat['edge_attr'] = edge_attr
-        dat['batch'] = batch
-        
-        dat = self.gconv(dat)
+        batch = self.gconv(batch)
 
         #global pooling
-        x = global_max_pool(dat['x'],
-                            batch=dat['batch'])
+        x = global_max_pool(batch.x,
+                            batch=batch.batch)
 
         # 3. Apply fully connected linear layers to graph
         x = self.lin(x)
         
         # 3. Apply fully connected linear layers to promoter
-        prom_x = self.linprom(prom_x)
+        prom_x = self.linprom(batch.prom_x)
         
         # 4. Apply readout layers 
         x = self.readout(torch.cat([x,prom_x],
