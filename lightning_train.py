@@ -2,19 +2,21 @@ import numpy as np
 import matplotlib.pyplot as plt
 import glob
 import os
+from math import pi as PI
+from collections import OrderedDict
 
 from src.Dataset import HiC_Dataset
-from src.layers.WEGATConv import WEGATConv
+from src.layers.WEGATConv import WEGAT_TOPK_Conv
+from src.layers.utils import PositionalEncoding
 
 import torch
 from torch import Tensor
 import torch.nn.functional as F
-from torch.nn import Parameter, Linear, Sequential
+from torch.nn import Parameter, Linear, Sequential, Dropout
 from torch.utils.data import random_split
 
 import torch_geometric as tgm
 from torch_geometric.data import DataLoader
-from torch_geometric.nn import TopKPooling as TKP
 from torch_geometric.nn import global_max_pool
 
 import pytorch_lightning as pl
@@ -22,45 +24,20 @@ from pytorch_lightning import loggers as pl_loggers
 
 DATASET = "Data/test_dset_18features_custom_norm.pt"
 NUMEPOCHS = 10
-BATCHSIZE = 500
+BATCHSIZE = 200
 LEARNING_RATE = 0.00005
-WEIGHT_DECAY = 5e-4
+DROPOUT = 0.1
 MANUAL_SEED = 40
 
 '''
-COMBINED 'WEIGHTED EDGE GRAPH ATTENTION' + 'TOP K POOLING LAYERS' 
+UTILITY FUNCTIONS
 '''
-class WEGAT_TOPK_Conv(torch.nn.Module):
-    def __init__(self,
-                 node_inchannels,
-                 node_outchannels,
-                 edge_inchannels,
-                 edge_outchannels,
-                 heads = 4):
-        super().__init__()
-        self.conv = WEGATConv(in_channels = node_inchannels, 
-                               node_out_channels = node_outchannels,
-                               edge_channels = edge_inchannels,
-                               edge_out_channels = edge_outchannels,
-                               heads = heads,
-                               concat = False
-                              )
-        self.pool = TKP(in_channels = node_outchannels)
-        
-    def forward(self, 
-                batch):
-        batch.x, batch.edge_attr = self.conv(batch.x.float(),
-                                             batch.edge_attr.float(),
-                                             batch.edge_index)
-        batch.x = batch.x.relu()
-        batch.edge_attr = batch.edge_attr.relu()
-        batch.x, batch.edge_index, batch.edge_attr, batch.batch, perm,score = self.pool(batch.x,
-                                                                                        batch.edge_index,
-                                                                                        edge_attr = batch.edge_attr,
-                                                                                        batch = batch.batch)
-        
-        return batch
-        
+def get_middle_features(x, 
+                        numnodes = 51
+                       ):
+    mid = int((numnodes-1)/2)
+    idxs = torch.arange(mid, x.shape[0], numnodes)
+    return x[idxs,:]
 
 
 '''
@@ -68,15 +45,17 @@ WEIGHTED EDGE GRAPH ATTENTION MODULE
 '''
 class WEGATModule(torch.nn.Module):
     def __init__(self, 
-                 hidden_channels,
+                 hidden_channels=25,
                  numchip = 18,
                  numedge = 3,
                  heads = 4,
-                 num_graph_convs = 3,
+                 num_graph_convs = 4,
                  num_fc = 5,
                  fc_channels = [15,15,10,5,2],
-                 num_prom_fc = 5,
-                 prom_fc_channels = [15,15,10,5,2]
+                 num_prom_fc = 8,
+                 prom_fc_channels = [15,15,10,10,10,10,5,2],
+                 positional_encoding = True,
+                 dropout = 0.1
                 ):
         if isinstance(fc_channels,int):
             fc_channels = [fc_channels]*num_fc
@@ -96,16 +75,28 @@ class WEGATModule(torch.nn.Module):
         
         super().__init__()
         torch.manual_seed(12345)
-
-        self.loglikelihood_precision = Parameter(torch.tensor(0.))
-        gconv = [WEGAT_TOPK_Conv(node_inchannels = numchip, 
-                             node_outchannels = hidden_channels,
-                             edge_inchannels = numedge,
-                             edge_outchannels = numedge,
-                             heads = heads
-                            )
-                ]
-        for idx in np.arange(num_graph_convs-1):
+        
+        #dropout layer
+        self.dropout = Dropout(p=dropout)
+        
+        #number of input chip features
+        self.numchip = numchip
+        
+        #Whether to apply positional encoding to nodes
+        self.positional_encoding = positional_encoding
+        if positional_encoding:
+            self.posencoder = PositionalEncoding(hidden_channels, 
+                                                 dropout=dropout)
+        
+        #initial embeddding layer
+        self.embedding = Sequential(OrderedDict([
+            ('lin_embedding', Linear(numchip, hidden_channels)),
+            ('lin_relu', torch.nn.ReLU())
+        ]))
+        
+        #graph convolution layers
+        gconv = []
+        for idx in np.arange(num_graph_convs):
             gconv.append(WEGAT_TOPK_Conv(node_inchannels = hidden_channels,
                                      node_outchannels = hidden_channels,
                                      edge_inchannels = numedge,
@@ -115,27 +106,26 @@ class WEGATModule(torch.nn.Module):
                         )
 
         self.gconv = Sequential(*gconv)
-
+        
+        #fully connected channels
         fc_channels = [hidden_channels]+fc_channels
         lin = []
         for idx in torch.arange(num_fc):
             lin.append(Linear(fc_channels[idx],fc_channels[idx+1]))
             lin.append(torch.nn.ReLU())
-
         self.lin = Sequential(*lin)
         self.num_fc = num_fc
-        self.numchip = numchip
         
+        #fully connected promoter channels 
         prom_fc_channels = [numchip]+prom_fc_channels
         linprom = []
         for idx in torch.arange(num_prom_fc):
             linprom.append(Linear(prom_fc_channels[idx],prom_fc_channels[idx+1]))
             linprom.append(torch.nn.ReLU())
-
         self.linprom = Sequential(*linprom)
         self.num_prom_fc = num_prom_fc
         
-        
+        #final readout function
         self.readout = Linear(prom_fc_channels[-1]+fc_channels[-1], 1)
         
     def forward(self, 
@@ -145,17 +135,29 @@ class WEGATModule(torch.nn.Module):
         batch.x[torch.isnan(batch.x)] = 0
         batch.prom_x[torch.isnan(batch.prom_x)] = 0
         
+        #initial dropout and embedding
+        batch.x = self.dropout(batch.x)
+        batch.x = self.embedding(batch.x.float())
+        
+        #positional encoding
+        if self.positional_encoding:
+            batch.x = self.posencoder(batch.x, 
+                                      batch.batch)
+        #graph convolutions
         batch = self.gconv(batch)
 
         #global pooling
-        x = global_max_pool(batch.x,
-                            batch=batch.batch)
+        #x = global_max_pool(batch.x,
+        #                    batch=batch.batch)
+        x = self.dropout(batch.x)
+        x = get_middle_features(x)
 
         # 3. Apply fully connected linear layers to graph
         x = self.lin(x)
         
         # 3. Apply fully connected linear layers to promoter
-        prom_x = self.linprom(batch.prom_x)
+        prom_x = self.dropout(batch.prom_x)
+        prom_x = self.linprom(prom_x)
         
         # 4. Apply readout layers 
         x = self.readout(torch.cat([x,prom_x],
@@ -172,13 +174,11 @@ class LitWEGATNet(pl.LightningModule):
                  module,
                  train_loader,
                  val_loader,
-                 learning_rate,
-                 weight_decay
+                 learning_rate
                 ):
         super().__init__()
         self.WEGATModule = module
         self.learning_rate = learning_rate
-        self.weight_decay = weight_decay
         self.train_loader = train_loader
         self.val_loader = val_loader
     
@@ -193,28 +193,35 @@ class LitWEGATNet(pl.LightningModule):
         
         loss = F.l1_loss(pred[:,0],
                          batch.y.float())
-        return loss
+        return loss, pred[:,0]
     
+    def customlog(self, name, loss, pred):
+        self.log(f'{name}_loss', loss)
+        self.log(f'{name}_maxabs_prediction', 
+                 torch.max(abs(pred)).item())
+        self.log(f'{name}_mean_prediction', 
+                 torch.mean(pred).item())
+        self.log(f'{name}_std_prediction', 
+                 torch.std(pred).item())
+        
     def training_step(self, batch, batch_idx):
-        loss = self.shared_step(batch)
-        self.log('train_loss', loss)
+        loss, pred = self.shared_step(batch)
+        self.customlog('train',loss, pred)
         return loss
     
     def validation_step(self, batch, batch_idx):
-        loss = self.shared_step(batch)
-        self.log('val_loss', loss)
+        loss, pred = self.shared_step(batch)
+        self.customlog('val',loss, pred)
         return loss
     
     def test_step(self, batch, batch_idx):
-        loss = self.shared_step(batch)
-        self.log('test_loss', loss)
+        loss, pred = self.shared_step(batch)
+        self.customlog('test',loss, pred)
         return loss     
     
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), 
-                                     lr=self.learning_rate,
-                                     weight_decay = self.weight_decay
-                                    )
+                                     lr=self.learning_rate)
         return optimizer
     
     
@@ -249,21 +256,23 @@ def main(hparams):
     '''
     NUMCHIP = dset[0].x.shape[1]
     NUMEDGE = dset[0].edge_attr.shape[1]
+    NUMNODESPERGRAPH = dset[0].x.shape[0]
     
     module = WEGATModule(hidden_channels = hparams.hiddenlayers,
-                      numchip = NUMCHIP,
-                      numedge = NUMEDGE
-                     )
+                         numchip = NUMCHIP,
+                         numedge = NUMEDGE,
+                         positional_encoding = hparams.positional_encoding,
+                         dropout = hparams.dropout
+                        )
     Net = LitWEGATNet(module,
                       train_loader,
                       val_loader,
-                      hparams.learning_rate, 
-                      hparams.weight_decay)
+                      hparams.learning_rate)
 
     tb_logger = pl_loggers.TensorBoardLogger(hparams.logdir)
     trainer = pl.Trainer(gpus=hparams.gpus, 
                          max_epochs=hparams.epochs, 
-                         progress_bar_refresh_rate=20,
+                         progress_bar_refresh_rate=1,
                          logger=tb_logger,
                          auto_lr_find=hparams.auto_lr_find,
                          resume_from_checkpoint=hparams.checkpoint
@@ -323,9 +332,9 @@ if __name__ == '__main__':
     parser.add_argument('--learning_rate',
                         type = float,
                         default=LEARNING_RATE)
-    parser.add_argument('--weight_decay',
+    parser.add_argument('--dropout',
                         type = float,
-                        default=WEIGHT_DECAY)
+                        default=DROPOUT)
     parser.add_argument('-c',
                         '--checkpoint',
                         default=None)
@@ -337,6 +346,10 @@ if __name__ == '__main__':
                         '--plot_lr',
                         type = bool,
                         default=False)
+    parser.add_argument('-p',
+                        '--positional_encoding',
+                        type = bool,
+                        default=True)
     args = parser.parse_args()
 
     main(args)            

@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from torch.nn import Parameter, Linear
 from torch_sparse import SparseTensor, set_diag
 from torch_geometric.nn.conv import MessagePassing
+from torch_geometric.nn import TopKPooling as TKP
 from torch_geometric.utils import remove_self_loops, add_self_loops, softmax
 
 from torch_geometric.nn.inits import glorot, zeros
@@ -216,3 +217,36 @@ class WEGATConv(MessagePassing):
                                              self.in_channels,
                                              self.out_channels, self.heads)
 
+'''
+COMBINED 'WEIGHTED EDGE GRAPH ATTENTION' + 'TOP K POOLING LAYERS' 
+'''
+class WEGAT_TOPK_Conv(torch.nn.Module):
+    def __init__(self,
+                 node_inchannels,
+                 node_outchannels,
+                 edge_inchannels,
+                 edge_outchannels,
+                 heads = 4):
+        super().__init__()
+        self.conv = WEGATConv(in_channels = node_inchannels, 
+                               node_out_channels = node_outchannels,
+                               edge_channels = edge_inchannels,
+                               edge_out_channels = edge_outchannels,
+                               heads = heads,
+                               concat = False
+                              )
+        self.pool = TKP(in_channels = node_outchannels)
+        
+    def forward(self, 
+                batch):
+        batch.x, batch.edge_attr = self.conv(batch.x.float(),
+                                             batch.edge_attr.float(),
+                                             batch.edge_index)
+        batch.x = batch.x.relu()
+        batch.edge_attr = batch.edge_attr.relu()
+        #batch.x, batch.edge_index, batch.edge_attr, batch.batch, perm,score = self.pool(batch.x,
+        #                                                                                batch.edge_index,
+        #                                                                                edge_attr = batch.edge_attr,
+        #                                                                                batch = batch.batch)
+        #
+        return batch
