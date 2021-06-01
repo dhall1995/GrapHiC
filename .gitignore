@@ -10,4 +10,6 @@ __pycache__/*
 src/utils/build
 runs/*
 runs
+*.swp
+*.swx
 
