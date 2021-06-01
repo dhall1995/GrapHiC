@@ -5,14 +5,19 @@ from torch_geometric.typing import (OptPairTensor, Adj, Size, NoneType,
 import torch
 from torch import Tensor
 import torch.nn.functional as F
-from torch.nn import Parameter, Linear
+from torch.nn import Parameter, Linear, Dropout
 from torch_sparse import SparseTensor, set_diag
 from torch_geometric.nn.conv import MessagePassing
 from torch_geometric.nn import TopKPooling as TKP
-from torch_geometric.utils import remove_self_loops, add_self_loops, softmax
+from torch_geometric.utils import remove_self_loops, add_self_loops, softmax, dropout_adj
 
 from torch_geometric.nn.inits import glorot, zeros
 
+def stats(arr):
+    print(f"\tmin:\t{torch.min(arr).item()}")
+    print(f"\tmax:\t{torch.max(arr).item()}")
+    print(f"\tmean:\t{torch.mean(arr).item()}")
+    
 class WEGATConv(MessagePassing):
     r"""The graph attentional operator from the `"Graph Attention Networks"
     <https://arxiv.org/abs/1710.10903>`_ paper
@@ -143,7 +148,13 @@ class WEGATConv(MessagePassing):
         x_r: OptTensor = None
         alpha_l: OptTensor = None
         alpha_r: OptTensor = None
-        if isinstance(x, Tensor):
+        
+        #print("Pre-processed node features")
+        #stats(x)  
+        #print("pre-processed edge features")
+        #stats(edge_attr)
+        
+        if isinstance(x, Tensor):     
             assert x.dim() == 2, 'Static graphs not supported in `GATConv`.'
             x_l = x_r = self.lin_l(x).view(-1, H, C)
             alpha_l = (x_l * self.att_l).sum(dim=-1)
@@ -156,10 +167,19 @@ class WEGATConv(MessagePassing):
             if x_r is not None:
                 x_r = self.lin_r(x_r).view(-1, H, C)
                 alpha_r = (x_r * self.att_r).sum(dim=-1)
-                
+         
         edge_attr = self.lin_e(edge_attr).view(-1,H,E)
         alpha_e = (edge_attr * self.att_e).sum(dim=-1)
-
+        
+        #print("embedded node features")
+        #stats(x_l)
+        #print("embedded edge features")
+        #stats(edge_attr)
+        #print("edge attention coefficients")
+        #stats(alpha_e)
+        #print("node attention coefficients")
+        #stats(alpha_l)
+        
         assert x_l is not None
         assert alpha_l is not None
         assert alpha_e is not None
@@ -174,20 +194,28 @@ class WEGATConv(MessagePassing):
 
         alpha = self._alpha
         self._alpha = None
-
+        
         if self.concat:
             out = out.view(-1, self.heads * self.out_channels)
             edge_attr = out.view(-1, self.heads * self.edge_out_channels)
         else:
-            out = out.mean(dim=1)
-            edge_attr = edge_attr.mean(dim=1)
+            out = out.max(dim=1)[0]
+            edge_attr = edge_attr.max(dim=1)[0]
 
         if self.node_bias is not None:
             out += self.node_bias
         
         if self.edge_bias is not None:
             edge_attr += self.edge_bias
-
+        
+        #print("edge bias")
+        #stats(self.edge_bias)
+        #print("node bias")
+        #stats(self.node_bias)
+        #print("propagated out node features (embedded features + bias)")
+        #stats(out)
+        #print("propagated out edge features (embedded features + bias)")
+        #stats(edge_attr)
         if isinstance(return_attention_weights, bool):
             assert alpha is not None
             if isinstance(edge_index, Tensor):
@@ -226,7 +254,9 @@ class WEGAT_TOPK_Conv(torch.nn.Module):
                  node_outchannels,
                  edge_inchannels,
                  edge_outchannels,
-                 heads = 4):
+                 heads = 4,
+                 dropout = 0.1
+                ):
         super().__init__()
         self.conv = WEGATConv(in_channels = node_inchannels, 
                                node_out_channels = node_outchannels,
@@ -235,18 +265,38 @@ class WEGAT_TOPK_Conv(torch.nn.Module):
                                heads = heads,
                                concat = False
                               )
-        self.pool = TKP(in_channels = node_outchannels)
+        self.dropout = Dropout(p=dropout)
+        self.p = dropout
         
     def forward(self, 
                 batch):
+        #print("#######################Layer##########################")
+        #print("%%%%%%%%%%%%%%%%%%%%%%inputs%%%%%%%%%%%%%%%%%%%%%%%%%%")
+        #print("Nodes:")
+        #stats(batch.x)
+        #print("Edges:")
+        #stats(batch.edge_attr)
+        #print("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%")
         batch.x, batch.edge_attr = self.conv(batch.x.float(),
                                              batch.edge_attr.float(),
                                              batch.edge_index)
+        #print("%%%%%%%%%%%%%%%%%convolved outputs%%%%%%%%%%%%%%%%%%%%")
+        #print("%%%%%%%%%%%%%%%%%pre dropout/relu%%%%%%%%%%%%%%%%%%%%%")
+        #print("Nodes:")
+        #stats(batch.x)
+        #print("Edges:")
+        #stats(batch.edge_attr)
+        #print("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%")
+        batch.x = self.dropout(batch.x)
         batch.x = batch.x.relu()
+        
+        batch.edge_index, batch.edge_attr = dropout_adj(batch.edge_index, 
+                                                        edge_attr=batch.edge_attr, 
+                                                        p=self.p)
         batch.edge_attr = batch.edge_attr.relu()
-        #batch.x, batch.edge_index, batch.edge_attr, batch.batch, perm,score = self.pool(batch.x,
-        #                                                                                batch.edge_index,
-        #                                                                                edge_attr = batch.edge_attr,
-        #                                                                                batch = batch.batch)
-        #
+        #print("%%%%%%%%%%%%%%%%%%%%%%outputs%%%%%%%%%%%%%%%%%%%%%%%%%%")
+        #print("Nodes:")
+        #stats(batch.x)
+        #print("Edges:")
+        #stats(batch.edge_attr)
         return batch
