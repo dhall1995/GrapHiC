@@ -5,10 +5,12 @@ from torch_geometric.typing import (OptPairTensor, Adj, Size, NoneType,
 import torch
 from torch import Tensor
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint
+
 from torch.nn import Parameter, Linear, Dropout
 from torch_sparse import SparseTensor, set_diag
 from torch_geometric.nn.conv import MessagePassing
-from torch_geometric.nn import TopKPooling as TKP
+from torch_geometric.nn.norm import MessageNorm,BatchNorm
 from torch_geometric.utils import remove_self_loops, add_self_loops, softmax, dropout_adj
 
 from torch_geometric.nn.inits import glorot, zeros
@@ -149,11 +151,6 @@ class WEGATConv(MessagePassing):
         alpha_l: OptTensor = None
         alpha_r: OptTensor = None
         
-        #print("Pre-processed node features")
-        #stats(x)  
-        #print("pre-processed edge features")
-        #stats(edge_attr)
-        
         if isinstance(x, Tensor):     
             assert x.dim() == 2, 'Static graphs not supported in `GATConv`.'
             x_l = x_r = self.lin_l(x).view(-1, H, C)
@@ -170,15 +167,6 @@ class WEGATConv(MessagePassing):
          
         edge_attr = self.lin_e(edge_attr).view(-1,H,E)
         alpha_e = (edge_attr * self.att_e).sum(dim=-1)
-        
-        #print("embedded node features")
-        #stats(x_l)
-        #print("embedded edge features")
-        #stats(edge_attr)
-        #print("edge attention coefficients")
-        #stats(alpha_e)
-        #print("node attention coefficients")
-        #stats(alpha_l)
         
         assert x_l is not None
         assert alpha_l is not None
@@ -208,14 +196,6 @@ class WEGATConv(MessagePassing):
         if self.edge_bias is not None:
             edge_attr += self.edge_bias
         
-        #print("edge bias")
-        #stats(self.edge_bias)
-        #print("node bias")
-        #stats(self.node_bias)
-        #print("propagated out node features (embedded features + bias)")
-        #stats(out)
-        #print("propagated out edge features (embedded features + bias)")
-        #stats(edge_attr)
         if isinstance(return_attention_weights, bool):
             assert alpha is not None
             if isinstance(edge_index, Tensor):
@@ -245,17 +225,20 @@ class WEGATConv(MessagePassing):
                                              self.in_channels,
                                              self.out_channels, self.heads)
 
+
+    
 '''
-COMBINED 'WEIGHTED EDGE GRAPH ATTENTION' + 'TOP K POOLING LAYERS' 
+Module to perform deep edge weighted GAT layers with pre-activation skip-connections 
 '''
-class WEGAT_TOPK_Conv(torch.nn.Module):
+class Deep_WEGAT_Conv(torch.nn.Module):
     def __init__(self,
                  node_inchannels,
                  node_outchannels,
                  edge_inchannels,
                  edge_outchannels,
                  heads = 4,
-                 dropout = 0.1
+                 node_dropout = 0.1,
+                 edge_dropout = 0.1
                 ):
         super().__init__()
         self.conv = WEGATConv(in_channels = node_inchannels, 
@@ -265,38 +248,62 @@ class WEGAT_TOPK_Conv(torch.nn.Module):
                                heads = heads,
                                concat = False
                               )
-        self.dropout = Dropout(p=dropout)
-        self.p = dropout
+        self.node_norm = BatchNorm(node_inchannels)
+        self.edge_norm = BatchNorm(edge_inchannels)
+        self.node_aggr = MessageNorm(learn_scale = True)
+        self.edge_aggr = MessageNorm(learn_scale = True)
+        self.node_dropout = node_dropout
+        self.edge_dropout = edge_dropout
+        self.edge_channels = edge_inchannels
+    
+    def reset_parameters(self):
+        self.conv.reset_parameters()
+        self.node_norm.reset_parameters()
+        self.edge_norm.reset_parameters()
+
+
+    def forward(self, batch):
+        """"""
+        #print("############################LAYER########################")
+        #print("INPUT FEATURES")
+        #print("nodes:")
+        #stats(batch.x)
+        #print("edges:")
+        #stats(batch.edge_attr)
         
-    def forward(self, 
-                batch):
-        #print("#######################Layer##########################")
-        #print("%%%%%%%%%%%%%%%%%%%%%%inputs%%%%%%%%%%%%%%%%%%%%%%%%%%")
-        #print("Nodes:")
-        #stats(batch.x)
-        #print("Edges:")
-        #stats(batch.edge_attr)
-        #print("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%")
-        batch.x, batch.edge_attr = self.conv(batch.x.float(),
-                                             batch.edge_attr.float(),
-                                             batch.edge_index)
-        #print("%%%%%%%%%%%%%%%%%convolved outputs%%%%%%%%%%%%%%%%%%%%")
-        #print("%%%%%%%%%%%%%%%%%pre dropout/relu%%%%%%%%%%%%%%%%%%%%%")
-        #print("Nodes:")
-        #stats(batch.x)
-        #print("Edges:")
-        #stats(batch.edge_attr)
-        #print("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%")
-        batch.x = self.dropout(batch.x)
-        batch.x = batch.x.relu()
+        h = self.node_norm(batch.x.float())
+        h = F.relu(h)
+        h = F.dropout(h, p=self.node_dropout)
         
-        batch.edge_index, batch.edge_attr = dropout_adj(batch.edge_index, 
-                                                        edge_attr=batch.edge_attr, 
-                                                        p=self.p)
-        batch.edge_attr = batch.edge_attr.relu()
-        #print("%%%%%%%%%%%%%%%%%%%%%%outputs%%%%%%%%%%%%%%%%%%%%%%%%%%")
-        #print("Nodes:")
+        edge_h = self.edge_norm(batch.edge_attr.float())
+        edge_h = F.relu(edge_h)
+        batch.edge_index, temp_edge_attrs = dropout_adj(batch.edge_index, 
+                                                        edge_attr=torch.cat([edge_h,batch.edge_attr],
+                                                                            dim=1),
+                                                        p=self.edge_dropout)
+        edge_h, batch.edge_attr = temp_edge_attrs[:,:self.edge_channels],temp_edge_attrs[:,self.edge_channels:]
+        
+        h, edge_h = self.conv(h.float(),
+                              edge_h.float(),
+                              batch.edge_index
+                             )
+        
+        #print("MESSAGES")
+        #print("nodes:")
+        #stats(h)
+        #print("edges:")
+        #stats(edge_h)
+        
+        
+        batch.x = self.node_aggr(batch.x, h)
+        batch.edge_attr = self.edge_aggr(batch.edge_attr, edge_h)
+        
+        #print("OUTPUT FEATURES")
+        #print("nodes:")
         #stats(batch.x)
-        #print("Edges:")
+        #print("edges:")      
         #stats(batch.edge_attr)
+        
         return batch
+
+        

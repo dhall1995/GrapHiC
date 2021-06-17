@@ -6,7 +6,7 @@ from math import pi as PI
 from collections import OrderedDict
 
 from src.Dataset import HiC_Dataset
-from src.layers.WEGATConv import WEGAT_TOPK_Conv
+from src.layers.WEGATConv import Deep_WEGAT_Conv
 from src.layers.utils import PositionalEncoding
 
 import torch
@@ -30,7 +30,7 @@ LEARNING_RATE = 0.0005
 POS_EMBEDDING_DROPOUT = 0.01
 FULLY_CONNECTED_DROPOUT = 0.01
 CONVOLUTIONAL_DROPOUT = 0.01
-MANUAL_SEED = 40
+MANUAL_SEED = 30
 
 '''
 UTILITY FUNCTIONS
@@ -54,8 +54,8 @@ class WEGATModule(torch.nn.Module):
                  heads = 4,
                  num_graph_convs = 6,
                  embedding_layers = 5,
-                 num_fc = 8,
-                 fc_channels = [15,15,15,10,10,10,5,2],
+                 num_fc = 10,
+                 fc_channels = [15,15,15,10,10,10,10,10,5,2],
                  num_prom_fc = 10,
                  prom_fc_channels = [15,15,15,15,10,10,10,10,5,2],
                  positional_encoding = True,
@@ -113,12 +113,13 @@ class WEGATModule(torch.nn.Module):
         #graph convolution layers
         gconv = []
         for idx in np.arange(num_graph_convs):
-            gconv.append(WEGAT_TOPK_Conv(node_inchannels = hidden_channels,
+            gconv.append(Deep_WEGAT_Conv(node_inchannels = hidden_channels,
                                      node_outchannels = hidden_channels,
                                      edge_inchannels = numedge,
                                      edge_outchannels = numedge,
                                      heads = heads,
-                                     dropout = conv_dropout
+                                     node_dropout = conv_dropout,
+                                     edge_dropout = conv_dropout
                                     )
                         )
 
@@ -154,6 +155,10 @@ class WEGATModule(torch.nn.Module):
         batch.x[torch.isnan(batch.x)] = 0
         batch.prom_x[torch.isnan(batch.prom_x)] = 0
         
+        #hack for now
+        batch.edge_attr[batch.edge_attr>100] = 100
+        batch.edge_attr[:,:2] /= 100
+        
         #initial dropout and embedding
         batch.x = self.dropout(batch.x)
         batch.x = self.embedding(batch.x.float())
@@ -182,6 +187,7 @@ class WEGATModule(torch.nn.Module):
         x = self.readout(r_x)
 
         return x
+
 
 
 '''
@@ -273,10 +279,12 @@ def main(hparams):
 
     print("Loaded in memory datasets")
     train_loader = DataLoader(train_dset,
-                              batch_size=hparams.batchsize
+                              batch_size=hparams.batchsize,
+                              shuffle = True
                              )
     val_loader = DataLoader(val_dset,
-                             batch_size=hparams.batchsize
+                             batch_size=hparams.batchsize,
+                             shuffle = True
                            )
 
 
@@ -291,6 +299,7 @@ def main(hparams):
                          numchip = NUMCHIP,
                          numedge = NUMEDGE,
                          embedding_layers = hparams.embeddinglayers,
+                         num_graph_convs = hparams.graph_convolutions,
                          positional_encoding = hparams.positional_encoding,
                          pos_embedding_dropout = hparams.pdropout,
                          fc_dropout = hparams.fdropout,
@@ -345,11 +354,11 @@ if __name__ == '__main__':
     parser.add_argument('-hidden',
                         '--hiddenchannels',
                         type = int,
-                        default=20)
+                        default=10)
     parser.add_argument('-em',
                         '--embeddinglayers',
                         type = int,
-                        default=6)
+                        default=10)
     parser.add_argument('-e',
                         '--epochs',
                         type = int,
@@ -413,6 +422,10 @@ if __name__ == '__main__':
                         '--numsteps',
                         type = int,
                         default = 10000)
+    parser.add_argument('-gc',
+                        '--graph_convolutions',
+                        type = int,
+                        default = 10)
     args = parser.parse_args()
 
     main(args)
