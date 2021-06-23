@@ -18,15 +18,15 @@ if __name__=="__main__":
     parser = argparse.ArgumentParser(description='Construct a datset of per-gene graph objects based off contact info, some target (e.g. rnaseq) and protein binding data', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-c","--cooler_files",
                         nargs = "+",
-                        help="Cooler file from a Hi-C experiment",
+                        help="Cooler file(s) from a Hi-C experiment(s)",
                         default = 'KR_downsampled_WT_merged_10000.cool',
                         type=str)
     parser.add_argument("-t","--target",
                         help="path tsv with columns ['chrom','promoter_start','promoter_end','target','name']",
                         default = 'rnaseq.tsv',
                         type=str)
-    parser.add_argument("-b","--bigwigs",
-                        help="bigwig file names",
+    parser.add_argument("-tr","--tracks",
+                        help="track paths",
                         nargs = "+",
                         default = ['Mbd3_ESC.bw'],
                         type=str)
@@ -36,12 +36,12 @@ if __name__=="__main__":
                         default = None,
                         type=str)
     parser.add_argument("-s","--statistics_types",
-                        help="bigwigs to evaluate",
+                        help="Statistics of each track to collect over each specified region and cooler bin",
                         nargs = "+",
                         default = 'max',
                         type=str)
     parser.add_argument("-tf","--transform",
-                        help="Transform to apply to the data",
+                        help="Transform to apply to the data. Can either provide a custom transform as in this script or specify 'robust', 'standard' or 'power' to use a scikit-learn defined data transform. Not specifying will result in no transform.",
                         default = None)
     parser.add_argument("-r","--root",
                         help="root folder containing both raw_dir and processed_dir",
@@ -66,18 +66,18 @@ if __name__=="__main__":
     if isinstance(args.cooler_files,str):
         args.cooler_files = [args.cooler_files]
         
-    if isinstance(args.bigwigs,str):
-        args.bigwigs = [args.bigwigs]
+    if isinstance(args.tracks,str):
+        args.tracks = [args.tracks]
         
     dset = HiC_Dataset(args.root,
                        contacts=args.cooler_files,
-                       bigwigs=args.bigwigs,
+                       tracks=args.tracks,
                        names=args.names,
                        target=args.target,
-                       bw_transform=mytransform,
+                       track_transform=mytransform,
                        pre_transform=None,
                        buffer = args.buffer,
                        chunk_size = args.chunk_size,
-                       bw_statistic_types=args.statistics_types,
+                       track_statistic_types=args.statistics_types,
                        chromosomes = args.chromosomes
                       )

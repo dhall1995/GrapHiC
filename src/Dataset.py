@@ -12,8 +12,10 @@ from sklearn.model_selection import train_test_split as tts
 import torch
 from torch_geometric.data import Dataset
 
-from .Datatrack_creation import evaluate_bigwigs_over_cooler_bins as eval_bws_over_cooler
-from .Datatrack_creation import evaluate_bigwigs_over_bed_dataframe as eval_bws_over_bed_df
+#from .Datatrack_creation import evaluate_bigwigs_over_cooler_bins as eval_bws_over_cooler
+#from .Datatrack_creation import evaluate_bigwigs_over_bed_dataframe as eval_bws_over_bed_df
+from .Datatrack_creation import evaluate_tracks_over_bed_dataframe as eval_tracks_over_bed_df
+from .Datatrack_creation import evaluate_tracks_over_cooler_bins as eval_tracks_over_cooler
 from .utils.Datatrack import DataTrack_bigwig as dtbw
 from .utils.norm import (
     PowerTransform_norm, 
@@ -33,7 +35,7 @@ from .Graph_creation import (
 CHROMS = [f'chr{idx+1}' for idx in np.arange(19)]+['chrX']
 
 def split_data(df):
-    prom_regions = {k1: np.concatenate([item[None,1:3] for item in list(g1)],
+    regions = {k1: np.concatenate([item[None,1:3] for item in list(g1)],
                                        axis = 0).astype('int32') for k1,g1 in itertools.groupby(sorted(df.values,
                                                                                                        key = lambda x:x[0]),
                                                                                                 lambda x: x[0])}
@@ -47,12 +49,12 @@ def split_data(df):
                                                                                      key = lambda x:x[0]),
                                                                               lambda x: x[0])}
     
-    pdata = {k1: np.concatenate([item[None,5:] for item in list(g1)],
+    data = {k1: np.concatenate([item[None,5:] for item in list(g1)],
                                 axis = 0).astype('float') for k1,g1 in itertools.groupby(sorted(df.values,
                                                                                                 key = lambda x:x[0]),
                                                                                          lambda x: x[0])}
     
-    return prom_regions, target, names, pdata
+    return regions, target, names, data
 
         
 def make_chromo_gene_graphs(
@@ -110,10 +112,10 @@ class HiC_Dataset(Dataset):
     def __init__(self, 
                  root,
                  contacts=None,
-                 bigwigs=None,
+                 tracks=None,
                  names=None,
                  target=None,
-                 bw_transform=None,
+                 track_transform=None,
                  transform=None,
                  pre_transform=None,
                  buffer = 25e4,
@@ -122,7 +124,7 @@ class HiC_Dataset(Dataset):
                  train_test_split = 0.3,
                  train = True,
                  random_state=42,
-                 bw_statistic_types=['mean'],
+                 track_statistic_types=['mean'],
                  chromosomes = CHROMS
                 ):
         #Estimate number of objects by rows of our target csv
@@ -144,13 +146,13 @@ class HiC_Dataset(Dataset):
         self.chr_lims = {str(row[0]):int(row[1]) for row in c.chroms()[:].values}
         
         if names is None:
-            self.names = bigwigs
+            self.names = tracks
         else:
             self.names = names
             
-        self.bigwigs = bigwigs    
-        self.stats_types = bw_statistic_types
-        self.bw_transform = bw_transform
+        self.tracks = tracks    
+        self.stats_types = track_statistic_types
+        self.track_transform = track_transform
         self.buffer = buffer
         self.binsize = binsize
         self.numnodespergraph = int((2*self.buffer)/self.binsize)+1
@@ -168,8 +170,8 @@ class HiC_Dataset(Dataset):
     @property
     def raw_file_names(self):
         conts = [os.path.join('contacts',item) for item in self.contacts]
-        bigwigs = [os.path.join('bigwigs',item) for item in self.contacts]
-        return conts + bigwigs + [self.target]
+        bigwigs = [os.path.join('tracks',item) for item in self.tracks]
+        return conts + tracks + [self.target]
 
     @property
     def processed_file_names(self):
@@ -193,52 +195,52 @@ class HiC_Dataset(Dataset):
                                                        path
                                                       )
                                          ) for path in self.contacts]
-        full_bigwig_paths= [os.path.join(self.root,
-                                         os.path.join('raw/bigwigs',
+        full_track_paths= [os.path.join(self.root,
+                                         os.path.join('raw/tracks',
                                                       path
                                                      )
-                                        ) for path in self.bigwigs]
+                                        ) for path in self.tracks]
         full_target_path = os.path.join(self.root,
                                         os.path.join('raw',
                                                      self.target
                                                     )
                                        )
         #EVALUATE BIGWIGS OVER COOLER BINS AND SAVE TO FILE
-        bw_out_file = os.path.join(self.processed_dir, "cooler_bigwig_data.csv")
-        print(f"Evaluating bigwigs over cooler bins and saving to file {bw_out_file}")
-        df = eval_bws_over_cooler(full_contact_paths[0],
-                                  bwpaths = full_bigwig_paths,
+        track_out_file = os.path.join(self.processed_dir, "cooler_track_data.csv")
+        print(f"Evaluating tracks over cooler bins and saving to file {track_out_file}")
+        df = eval_tracks_over_cooler(full_contact_paths[0],
+                                  paths = full_track_paths,
                                   names = self.names,
                                   stats_types = self.stats_types,
                                   allowed_chroms = self.chromosomes
                                  )
         
-        if isinstance(self.bw_transform,str):
-            if self.bw_transform == "Power":
+        if isinstance(self.track_transform,str):
+            if self.track_transform == "Power":
                 norm = PowerTransform_norm
-            elif self.bw_transform == "Standard":
+            elif self.track_transform == "Standard":
                 norm = Standard_norm
-            elif self.bw_transform == "Robust":
+            elif self.track_transform == "Robust":
                 norm = Robust_norm
-        elif self.bw_transform is not None:
-            norm = lambda x: np.apply_along_axis(self.bw_transform,
+        elif self.track_transform is not None:
+            norm = lambda x: np.apply_along_axis(self.track_transform,
                                                  0,
                                                  x)
             
-        if self.bw_transform is not None:
+        if self.track_transform is not None:
             df = pd.DataFrame(data= norm(df.values.astype('float')),
                               columns = df.columns,
                               index= df.index)
         
-        df.to_csv(bw_out_file, 
+        df.to_csv(track_out_file, 
                   sep = "\t")
         
         #EVALUATE BIGWIGS OVER THE TARGETS AND SAVE TO FILE
         print(f"Evaluating bigwigs over specific regions of interest and appending to target file {full_target_path}")
         df = pd.read_table(full_target_path)
         df = df[df.columns.values[:5]]
-        colnames, arr = eval_bws_over_bed_df(df,
-                                             full_bigwig_paths,
+        colnames, arr = eval_tracks_over_bed_df(df,
+                                             full_track_paths,
                                              names = self.names,
                                              stats_types = self.stats_types)
         if self.bw_transform is not None: 
