@@ -1,205 +1,44 @@
 import numpy as np
-import matplotlib.pyplot as plt
-import glob
-import os
-from math import pi as PI
 from collections import OrderedDict
+from sklearn.metrics import precision_score, recall_score
 
 from src.Dataset import HiC_Dataset
-from src.layers.WEGATConv import Deep_WEGAT_Conv
-from src.layers.utils import PositionalEncoding
+from src.models.GrapHiC import GrapHiC_Encoder
 
 import torch
 from torch import Tensor
-import torch.nn.functional as F
-from torch.nn import Parameter, Linear, Sequential, Dropout
+from torch.nn import CrossEntropyLoss
 from torch.utils.data import random_split
 from torch.optim.lr_scheduler import OneCycleLR
 
 import torch_geometric as tgm
 from torch_geometric.data import DataLoader
-from torch_geometric.nn import global_max_pool
 
 import pytorch_lightning as pl
 from pytorch_lightning import loggers as pl_loggers
 
 DATASET = "Data/test_dset_18features_custom_norm.pt"
 NUMEPOCHS = 5000
+NUMCLASSES = 3
 BATCHSIZE = 200
-LEARNING_RATE = 0.0005
+LEARNING_RATE = 0.0001
 POS_EMBEDDING_DROPOUT = 0.01
 FULLY_CONNECTED_DROPOUT = 0.01
 CONVOLUTIONAL_DROPOUT = 0.01
 MANUAL_SEED = 30
 
-'''
-UTILITY FUNCTIONS
-'''
-def get_middle_features(x,
-                        numnodes = 51
-                       ):
-    mid = int((numnodes-1)/2)
-    idxs = torch.arange(mid, x.shape[0], numnodes)
-    return x[idxs,:]
-
-
-'''
-WEIGHTED EDGE GRAPH ATTENTION MODULE
-'''
-class WEGATModule(torch.nn.Module):
-    def __init__(self,
-                 hidden_channels=20,
-                 numchip = 18,
-                 numedge = 3,
-                 heads = 4,
-                 num_graph_convs = 6,
-                 embedding_layers = 5,
-                 num_fc = 10,
-                 fc_channels = [15,15,15,10,10,10,10,10,5,2],
-                 num_prom_fc = 10,
-                 prom_fc_channels = [15,15,15,15,10,10,10,10,5,2],
-                 positional_encoding = True,
-                 pos_embedding_dropout = 0.1,
-                 fc_dropout = 0.5,
-                 conv_dropout = 0.1
-                ):
-        if isinstance(fc_channels,int):
-            fc_channels = [fc_channels]*num_fc
-        elif len(fc_channels) != num_fc:
-            print("number of fully connected channels must match the number of fully connected layers")
-            raise
-
-        if num_graph_convs < 1:
-            print("need at least one graph convolution")
-            raise
-        num_graph_convs = int(num_graph_convs)
-
-        if isinstance(prom_fc_channels,int):
-            prom_fc_channels = [prom_fc_channels]*num_prom_fc
-        elif len(prom_fc_channels) != num_prom_fc:
-            raise
-
-        super().__init__()
-        torch.manual_seed(12345)
-        #dropout layer
-        self.dropout = Dropout(p=fc_dropout)
-
-        #number of input chip features
-        self.numchip = numchip
-
-        #Whether to apply positional encoding to nodes
-        self.positional_encoding = positional_encoding
-        if positional_encoding:
-            self.posencoder = PositionalEncoding(hidden_channels,
-                                                 dropout=pos_embedding_dropout,
-                                                 identical_sizes = True
-                                                )
-
-        #initial embeddding layer
-        embedding = []
-        embedding.append(Linear(numchip,
-                                hidden_channels)
-                        )
-        embedding.append(torch.nn.Dropout(p=fc_dropout))
-        embedding.append(torch.nn.ReLU())
-        for idx in torch.arange(embedding_layers - 1):
-            embedding.append(Linear(hidden_channels,
-                                    hidden_channels)
-                            )
-            embedding.append(torch.nn.Dropout(p=fc_dropout))
-            embedding.append(torch.nn.ReLU())
-        self.embedding = Sequential(*embedding)
-
-        #graph convolution layers
-        gconv = []
-        for idx in np.arange(num_graph_convs):
-            gconv.append(Deep_WEGAT_Conv(node_inchannels = hidden_channels,
-                                     node_outchannels = hidden_channels,
-                                     edge_inchannels = numedge,
-                                     edge_outchannels = numedge,
-                                     heads = heads,
-                                     node_dropout = conv_dropout,
-                                     edge_dropout = conv_dropout
-                                    )
-                        )
-
-        self.gconv = Sequential(*gconv)
-
-        #fully connected channels
-        fc_channels = [hidden_channels]+fc_channels
-        lin = []
-        for idx in torch.arange(num_fc):
-            lin.append(Linear(fc_channels[idx],fc_channels[idx+1]))
-            lin.append(torch.nn.Dropout(p=fc_dropout))
-            lin.append(torch.nn.ReLU())
-        self.lin = Sequential(*lin)
-        self.num_fc = num_fc
-
-        #fully connected promoter channels
-        prom_fc_channels = [numchip]+prom_fc_channels
-        linprom = []
-        for idx in torch.arange(num_prom_fc):
-            linprom.append(Linear(prom_fc_channels[idx],prom_fc_channels[idx+1]))
-            linprom.append(torch.nn.Dropout(p=fc_dropout))
-            linprom.append(torch.nn.ReLU())
-        self.linprom = Sequential(*linprom)
-        self.num_prom_fc = num_prom_fc
-
-        #final readout function
-        self.readout = Linear(prom_fc_channels[-1]+fc_channels[-1], 1)
-
-    def forward(self,
-                batch):
-        batch.prom_x = batch.prom_x.view(-1,self.numchip).float()
-        batch.edge_attr[torch.isnan(batch.edge_attr)] = 0
-        batch.x[torch.isnan(batch.x)] = 0
-        batch.prom_x[torch.isnan(batch.prom_x)] = 0
-        
-        #hack for now
-        batch.edge_attr[batch.edge_attr>100] = 100
-        batch.edge_attr[:,:2] /= 100
-        
-        #initial dropout and embedding
-        batch.x = self.dropout(batch.x)
-        batch.x = self.embedding(batch.x.float())
-
-        #positional encoding
-        if self.positional_encoding:
-            batch.x = self.posencoder(batch.x,
-                                      batch.batch)
-
-        #graph convolutions
-        batch = self.gconv(batch)
-
-        #extracting node of interest from graph
-        x = get_middle_features(batch.x)
-
-        # 3. Apply fully connected linear layers to graph
-        x = self.lin(x)
-
-        # 3. Apply fully connected linear layers to promoter
-        prom_x = self.linprom(batch.prom_x)
-
-        r_x = torch.cat([x,prom_x],
-                        dim = 1)
-        
-        # 4. Apply readout layers
-        x = self.readout(r_x)
-
-        return x
-
-
 
 '''
 LIGHTNING NET
 '''
-class LitWEGATNet(pl.LightningModule):
+class LitGATENet(pl.LightningModule):
     def __init__(self,
                  module,
                  train_loader,
                  val_loader,
                  learning_rate,
-                 numsteps
+                 numsteps,
+                 criterion
                 ):
         super().__init__()
         self.module = module
@@ -207,46 +46,69 @@ class LitWEGATNet(pl.LightningModule):
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.numsteps = numsteps
+        self.criterion = criterion
 
     def train_dataloader(self):
         return self.train_loader
+    
     def validation_dataloader(self):
         return self.test_loader
 
-
     def shared_step(self, batch):
         pred = self.module(batch).squeeze()
-        idxs = abs(batch.y.float())>0.01
-        loss = F.l1_loss(pred[idxs], batch.y.float()[idxs])
+        loss = self.criterion(pred, batch.y)
         return loss, pred
 
-    def customlog(self, name, loss, pred):
-        self.log(f'{name}_loss', loss)
-        self.log(f'{name}_maxabs_prediction',
-                 torch.max(abs(pred)).item())
-        self.log(f'{name}_mean_prediction',
-                 torch.mean(pred).item())
-        self.log(f'{name}_std_prediction',
-                 torch.std(pred).item())
+    def customlog(self, 
+                  name,
+                  loss,
+                  pred,
+                  actual
+                 ):
+        
+        cls = pred.argmax(dim=1)
+        # identifying number of correct predections in a given batch
+        correct=cls.eq(actual).sum().item()
+        # identifying total number of labels in a given batch
+        total=len(actual)
+        
+        cls = Tensor.cpu(cls)
+        actual = Tensor.cpu(actual)
+        
+        precision = precision_score(cls.numpy(), 
+                                    actual.numpy(),
+                                    average = 'weighted'
+                                   )
+        recall = recall_score(cls.numpy(), 
+                              actual.numpy(),
+                              average = 'weighted'
+                             )
+        
+        self.log(f"{name}_acc",correct/total)
+        self.log(f"{name}_precision",precision)
+        self.log(f"{name}_recall", recall)
+        self.log(f"{name}_loss",loss)
 
+        
     def training_step(self, batch, batch_idx):
         loss, pred = self.shared_step(batch)
-        self.customlog('train',loss, pred)
+        self.customlog('train',loss,pred, batch.y)
         return loss
 
     def validation_step(self, batch, batch_idx):
         loss, pred = self.shared_step(batch)
-        self.customlog('val',loss, pred)
+        self.customlog('val',loss,pred, batch.y)
         return loss
 
     def test_step(self, batch, batch_idx):
         loss, pred = self.shared_step(batch)
-        self.customlog('test',loss, pred)
+        self.customlog('test',loss,pred, batch.y)
         return loss
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(),
-                                     lr=self.learning_rate)
+                                     lr=self.learning_rate
+                                    )
         return {
             'optimizer': optimizer,
             'lr_scheduler': {
@@ -256,6 +118,8 @@ class LitWEGATNet(pl.LightningModule):
                                        )
             }
         }
+
+
 
 '''
 MAIN FUNCTION
@@ -269,7 +133,25 @@ def main(hparams):
     '''
     print("Loading in memory datasets")
     dset = torch.load(hparams.dataset)
-
+    
+    print("Balancing classes")
+    vals = [d.y.item() for d in dset]
+    idxs = np.argsort(vals)
+    upidxs = idxs[:5000]
+    downidxs = idxs[-5000:]
+    nonsig_idxs = np.argsort(abs(np.array(vals)))[:5000]
+    balanced_dset = {'down':[dset[idx] for idx in downidxs],
+                     'up': [dset[idx] for idx in upidxs],
+                     'nonsig':[dset[idx] for idx in nonsig_idxs]}
+    
+    classes = ('down','nonsig','up')
+    dset = []
+    for idx, key in enumerate(classes):
+        for d in balanced_dset[key]:
+            d.y = idx
+        dset += balanced_dset[key]
+    criterion = CrossEntropyLoss() 
+    
     numdatapoints = len(dset)
     trainsize = int(numdatapoints*hparams.trainfraction)
     train_dset, val_dset = random_split(dset,
@@ -286,6 +168,10 @@ def main(hparams):
                              batch_size=hparams.batchsize,
                              shuffle = True
                            )
+    sample_batch = 0
+    for dat in train_loader:
+        sample_batch = dat
+        break
 
 
     '''
@@ -295,7 +181,7 @@ def main(hparams):
     NUMEDGE = dset[0].edge_attr.shape[1]
     NUMNODESPERGRAPH = dset[0].x.shape[0]
 
-    module = WEGATModule(hidden_channels = hparams.hiddenchannels,
+    module = GrapHiC_Encoder(hidden_channels = hparams.hiddenchannels,
                          numchip = NUMCHIP,
                          numedge = NUMEDGE,
                          embedding_layers = hparams.embeddinglayers,
@@ -305,12 +191,12 @@ def main(hparams):
                          fc_dropout = hparams.fdropout,
                          conv_dropout = hparams.cdropout
                         )
-    Net = LitWEGATNet(module,
+    Net = LitGATENet(module,
                       train_loader,
                       val_loader,
                       hparams.learning_rate,
-                      hparams.numsteps
-                     )
+                      hparams.numsteps,
+                      criterion = criterion)
 
     tb_logger = pl_loggers.TensorBoardLogger(hparams.logdir,
                                              name = hparams.experiment_name,
@@ -321,7 +207,8 @@ def main(hparams):
                          progress_bar_refresh_rate=1,
                          logger=tb_logger,
                          auto_lr_find=hparams.auto_lr_find,
-                         resume_from_checkpoint=hparams.checkpoint
+                         resume_from_checkpoint=hparams.checkpoint,
+                         stochastic_weight_avg=True
                          )
     if hparams.auto_lr_find:
         # Run learning rate finder
@@ -421,11 +308,11 @@ if __name__ == '__main__':
     parser.add_argument('-n',
                         '--numsteps',
                         type = int,
-                        default = 10000)
+                        default = 3000)
     parser.add_argument('-gc',
                         '--graph_convolutions',
                         type = int,
-                        default = 10)
+                        default = 6)
     args = parser.parse_args()
 
     main(args)

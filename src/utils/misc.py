@@ -5,6 +5,17 @@ import pandas as pd
 import torch
 from torch_geometric.data import Data
 
+'''
+UTILITY FUNCTIONS
+'''
+def get_middle_features(x,
+                        numnodes = 51
+                       ):
+    mid = int((numnodes-1)/2)
+    idxs = torch.arange(mid, x.shape[0], numnodes)
+    return x[idxs,:]
+
+
 def ProgressBar(iteration,
                 total,
                 decimals = 1, 
