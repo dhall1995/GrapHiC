@@ -1,6 +1,4 @@
 import numpy as np
-from sklearn.metrics import precision_score, recall_score
-
 from src.Dataset import HiC_Dataset
 from src.models.GrapHiC import GrapHiC_Encoder
 
@@ -30,14 +28,13 @@ MANUAL_SEED = 30
 '''
 LIGHTNING NET
 '''
-class LitGATENet(pl.LightningModule):
+class LitWEGATNet(pl.LightningModule):
     def __init__(self,
                  module,
                  train_loader,
                  val_loader,
                  learning_rate,
-                 numsteps,
-                 criterion
+                 numsteps
                 ):
         super().__init__()
         self.module = module
@@ -45,69 +42,45 @@ class LitGATENet(pl.LightningModule):
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.numsteps = numsteps
-        self.criterion = criterion
 
     def train_dataloader(self):
         return self.train_loader
-    
     def validation_dataloader(self):
         return self.test_loader
 
+
     def shared_step(self, batch):
         pred = self.module(batch).squeeze()
-        loss = self.criterion(pred, batch.y)
+        loss = F.l1_loss(pred, batch.y.float())
         return loss, pred
 
-    def customlog(self, 
-                  name,
-                  loss,
-                  pred,
-                  actual
-                 ):
-        
-        cls = pred.argmax(dim=1)
-        # identifying number of correct predections in a given batch
-        correct=cls.eq(actual).sum().item()
-        # identifying total number of labels in a given batch
-        total=len(actual)
-        
-        cls = Tensor.cpu(cls)
-        actual = Tensor.cpu(actual)
-        
-        precision = precision_score(cls.numpy(), 
-                                    actual.numpy(),
-                                    average = 'weighted'
-                                   )
-        recall = recall_score(cls.numpy(), 
-                              actual.numpy(),
-                              average = 'weighted'
-                             )
-        
-        self.log(f"{name}_acc",correct/total)
-        self.log(f"{name}_precision",precision)
-        self.log(f"{name}_recall", recall)
-        self.log(f"{name}_loss",loss)
+    def customlog(self, name, loss, pred):
+        self.log(f'{name}_loss', loss)
+        self.log(f'{name}_maxabs_prediction',
+                 torch.max(abs(pred)).item())
+        self.log(f'{name}_mean_prediction',
+                 torch.mean(pred).item())
+        self.log(f'{name}_std_prediction',
+                 torch.std(pred).item())
 
-        
     def training_step(self, batch, batch_idx):
         loss, pred = self.shared_step(batch)
-        self.customlog('train',loss,pred, batch.y)
+        self.customlog('train',loss, pred)
         return loss
 
     def validation_step(self, batch, batch_idx):
         loss, pred = self.shared_step(batch)
-        self.customlog('val',loss,pred, batch.y)
+        self.customlog('val',loss, pred)
         return loss
 
     def test_step(self, batch, batch_idx):
         loss, pred = self.shared_step(batch)
-        self.customlog('test',loss,pred, batch.y)
+        self.customlog('test',loss, pred)
         return loss
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(),
-                                     lr=self.learning_rate
-                                    )
+                                     lr=self.learning_rate)
         return {
             'optimizer': optimizer,
             'lr_scheduler': {
@@ -117,8 +90,6 @@ class LitGATENet(pl.LightningModule):
                                        )
             }
         }
-
-
 
 '''
 MAIN FUNCTION
@@ -132,25 +103,7 @@ def main(hparams):
     '''
     print("Loading in memory datasets")
     dset = torch.load(hparams.dataset)
-    
-    print("Balancing classes")
-    vals = [d.y.item() for d in dset]
-    idxs = np.argsort(vals)
-    upidxs = idxs[:5000]
-    downidxs = idxs[-5000:]
-    nonsig_idxs = np.argsort(abs(np.array(vals)))[:5000]
-    balanced_dset = {'down':[dset[idx] for idx in downidxs],
-                     'up': [dset[idx] for idx in upidxs],
-                     'nonsig':[dset[idx] for idx in nonsig_idxs]}
-    
-    classes = ('down','nonsig','up')
-    dset = []
-    for idx, key in enumerate(classes):
-        for d in balanced_dset[key]:
-            d.y = idx
-        dset += balanced_dset[key]
-    criterion = CrossEntropyLoss() 
-    
+
     numdatapoints = len(dset)
     trainsize = int(numdatapoints*hparams.trainfraction)
     train_dset, val_dset = random_split(dset,
@@ -167,10 +120,6 @@ def main(hparams):
                              batch_size=hparams.batchsize,
                              shuffle = True
                            )
-    sample_batch = 0
-    for dat in train_loader:
-        sample_batch = dat
-        break
 
 
     '''

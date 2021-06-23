@@ -187,7 +187,7 @@ class HiC_Dataset(Dataset):
                                                                                                   f'processed/test/data_*.pt')
                                                                                     )
                          ]
-        return data_paths + ['cooler_bigwig_data.csv']
+        return data_paths + ['cooler_track_data.csv']
 
     def process(self):
         full_contact_paths= [os.path.join(self.root,
@@ -235,6 +235,7 @@ class HiC_Dataset(Dataset):
         df.to_csv(track_out_file, 
                   sep = "\t")
         
+        assert 1 == 2
         #EVALUATE BIGWIGS OVER THE TARGETS AND SAVE TO FILE
         print(f"Evaluating bigwigs over specific regions of interest and appending to target file {full_target_path}")
         df = pd.read_table(full_target_path)

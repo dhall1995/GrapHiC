@@ -26,7 +26,7 @@ def cooler_bin_info(cooler_path,
     chrom_binregs = {chrom: chrom_binregs[chrom] for chrom in chrom_binregs if chrom in allowed_chroms}
     chrom_stats = {chrom: chrom_stats[chrom] for chrom in chrom_stats if chrom in allowed_chroms}
     
-    return chrom_binregs, chrom_stats, binssize
+    return chrom_binregs, chrom_stats, binsize
     
 def evaluate_tracks_over_cooler_bins(cooler_path,
                                      paths = [],
@@ -44,7 +44,7 @@ def evaluate_tracks_over_cooler_bins(cooler_path,
     colnames = []
     for idx, path in enumerate(paths):
         if verbose:
-            print(names[idx], track)
+            print(names[idx], path)
         try:
             track = dtbw('bigwig').from_bw(path)
         except:

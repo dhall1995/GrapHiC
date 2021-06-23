@@ -127,13 +127,13 @@ def rvps_from_bed(file_path,
     x = pd.read_csv(file_path, sep = sep, header = header)
     
     if allowed_chroms is None:
-        allowed_chroms = list(set(x[chrom_col].values))
+        allowed_chroms = list(set(x.values[:,chrom_col]))
         for idx, item in enumerate(allowed_chroms):
-            #use the chromosome naming convention that chromosomes don't start with chr
+            #use the chromosome naming convention that chromosomes start with chr
             if "chr" not in item:
                 allowed_chroms[idx] = "chr" + item
     
-    chrom_col = np.where(x.columns.values == chrom_col)[0][0]
+    #chrom_col = np.where(x.columns.values == chrom_col)[0][0]
     
     regions_dict = {}
     values_dict = {}

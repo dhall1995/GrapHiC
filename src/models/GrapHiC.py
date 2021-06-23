@@ -22,19 +22,13 @@ class GrapHiC_Encoder(torch.nn.Module):
                  num_graph_convs = 5,
                  embedding_layers = 2,
                  num_fc = 5,
-                 fc_channels = [15,15,10,10,5],
+                 fc_channels = 15,
                  positional_encoding = True,
                  pos_embedding_dropout = 0.1,
                  fc_dropout = 0.5,
                  conv_dropout = 0.1,
                  numclasses = NUMCLASSES
                 ):
-        if isinstance(fc_channels,int):
-            fc_channels = [fc_channels]*num_fc
-        elif len(fc_channels) != num_fc:
-            print("number of fully connected channels must match the number of fully connected layers")
-            raise
-
         if num_graph_convs < 1:
             print("need at least one graph convolution")
             raise
@@ -97,6 +91,7 @@ class GrapHiC_Encoder(torch.nn.Module):
         self.gconv = Sequential(*gconv)
 
         #fully connected channels
+        fc_channels = [fc_channels]*num_fc 
         fc_channels = [hidden_channels]+fc_channels
         lin = []
         for idx in torch.arange(num_fc):
