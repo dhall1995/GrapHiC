@@ -2,6 +2,7 @@ Data/archive/*
 Data/raw/*
 Data/processed/*
 Data/*
+tutorial_data/*
 test_scripts/*
 test_scripts
 .ipynb_checkpoints/*
@@ -12,4 +13,6 @@ runs/*
 runs
 *.swp
 *.swx
+testing.ipynb
+testing*
 

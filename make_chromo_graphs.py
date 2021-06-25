@@ -1,5 +1,5 @@
 from src.Graph_creation import (
-    compute_ptg_graph_from_regions,
+    from_regions,
     add_binned_data_to_graphlist
 )
 from src.utils.misc import (
@@ -37,13 +37,13 @@ def make_graph(clrs,
                binned_data, 
                regions, 
                chrom):
-    gdict = compute_ptg_graph_from_regions(clrs,
-                                           {chrom: regions[chrom]},
-                                           balance = True,
-                                           join = False,
-                                           force_disjoint=False,
-                                           record_cistrans_interactions = False,
-                                           record_node_chromosome_as_onehot = False)
+    gdict = from_regions(clrs,
+                         {chrom: regions[chrom]},
+                         balance = True,
+                         join = False,
+                         force_disjoint=False,
+                         record_cistrans_interactions = False,
+                         record_node_chromosome_as_onehot = False)
     
     add_binned_data_to_graphlist(gdict[chrom],
                                  binned_data)

@@ -2,7 +2,7 @@ import numpy as np
 from sklearn.metrics import precision_score, recall_score
 
 from src.Dataset import HiC_Dataset
-from src.models.GrapHiC import GrapHiC_Encoder
+from src.models.reccurent_GATE_encoder import RGATE_Encoder
 
 import torch
 from torch import Tensor
@@ -180,7 +180,7 @@ def main(hparams):
     NUMEDGE = dset[0].edge_attr.shape[1]
     NUMNODESPERGRAPH = dset[0].x.shape[0]
 
-    module = GrapHiC_Encoder(hidden_channels = hparams.hiddenchannels,
+    module = RGATE_Encoder(hidden_channels = hparams.hiddenchannels,
                          numchip = NUMCHIP,
                          numedge = NUMEDGE,
                          embedding_layers = hparams.embeddinglayers,
