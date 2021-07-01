@@ -1,4 +1,4 @@
-from src.Dataset import HiC_Dataset
+from GrapHiC.Dataset import HiC_Dataset
 import numpy as np
 
 CHROMS = [f'chr{idx+1}' for idx in np.arange(19)]+['chrX']
@@ -50,7 +50,7 @@ if __name__=="__main__":
     parser.add_argument("-bf", "--buffer",
                         help="Buffer to add each side of a gene to create a graph object",
                         type = int,
-                        default = 25e4)
+                        default = 1e6)
     parser.add_argument("-ch","--chunk_size",
                         help="How many genes to try and process at once",
                         default = 500,

@@ -336,9 +336,10 @@ def add_backbone_interactions(
                                    axis = 0
                                   )
     
-    edge_data = np.concatenate([edge_data,
-                                bbone_data[:,None]],
-                               axis = 1)
+    if record_backbone_interactions:
+        edge_data = np.concatenate([edge_data,
+                                    bbone_data[:,None]],
+                                   axis = 1)
     
     
     return edge_index, edge_data    
@@ -587,7 +588,7 @@ def from_regions(
     force_disjoint: Optional[bool] = False,
     backbone: Optional[bool] = True,
     record_cistrans_interactions: Optional[bool] = False,
-    record_backbone_interactions: Optional[bool] = True,
+    record_backbone_interactions: Optional[bool] = False,
     record_node_chromosome_as_onehot: Optional[bool] = False,
     add_self_loops: Optional[bool] = True,
     record_names = True,

@@ -12,8 +12,6 @@ from sklearn.model_selection import train_test_split as tts
 import torch
 from torch_geometric.data import Dataset
 
-#from .Datatrack_creation import evaluate_bigwigs_over_cooler_bins as eval_bws_over_cooler
-#from .Datatrack_creation import evaluate_bigwigs_over_bed_dataframe as eval_bws_over_bed_df
 from .Datatrack_creation import evaluate_tracks_over_bed_dataframe as eval_tracks_over_bed_df
 from .Datatrack_creation import evaluate_tracks_over_cooler_bins as eval_tracks_over_cooler
 from .utils.Datatrack import DataTrack_bigwig as dtbw
@@ -35,21 +33,23 @@ from .Graph_creation import (
 CHROMS = [f'chr{idx+1}' for idx in np.arange(19)]+['chrX']
 
 def split_data(df):
+    namecol = np.where(df.columns.values=='name')[0][0]
+    
     regions = {k1: np.concatenate([item[None,1:3] for item in list(g1)],
                                        axis = 0).astype('int32') for k1,g1 in itertools.groupby(sorted(df.values,
                                                                                                        key = lambda x:x[0]),
                                                                                                 lambda x: x[0])}
 
-    target = {k1: np.concatenate([item[None,[3]] for item in list(g1)],
-                                 axis = 0).astype('float')[:,0] for k1,g1 in itertools.groupby(sorted(df.values,
+    target = {k1: np.concatenate([item[None,3:namecol] for item in list(g1)],
+                                 axis = 0).astype('float') for k1,g1 in itertools.groupby(sorted(df.values,
                                                                                                       key = lambda x:x[0]),
                                                                                                lambda x: x[0])}
-    names = {k1: np.concatenate([item[None,[4]] for item in list(g1)],
+    names = {k1: np.concatenate([item[None,[namecol]] for item in list(g1)],
                                 axis = 0)[:,0] for k1,g1 in itertools.groupby(sorted(df.values,
                                                                                      key = lambda x:x[0]),
                                                                               lambda x: x[0])}
     
-    data = {k1: np.concatenate([item[None,5:] for item in list(g1)],
+    data = {k1: np.concatenate([item[None,namecol+1:] for item in list(g1)],
                                 axis = 0).astype('float') for k1,g1 in itertools.groupby(sorted(df.values,
                                                                                                 key = lambda x:x[0]),
                                                                                          lambda x: x[0])}
@@ -94,7 +94,7 @@ def make_chromo_gene_graphs(
                                      binned_data)
     
         for jdx,item in enumerate(glist[chrom]):
-            item['target'] = tdict[chrom][jdx]
+            item['target'] = tdict[chrom][jdx,:]
             item['prom_x'] = prom_info[chrom][jdx,:]
             torch_item = ptg_from_npy(item)
             torch.save(torch_item, 
@@ -235,16 +235,16 @@ class HiC_Dataset(Dataset):
         df.to_csv(track_out_file, 
                   sep = "\t")
         
-        assert 1 == 2
         #EVALUATE BIGWIGS OVER THE TARGETS AND SAVE TO FILE
         print(f"Evaluating bigwigs over specific regions of interest and appending to target file {full_target_path}")
         df = pd.read_table(full_target_path)
-        df = df[df.columns.values[:5]]
+        namecol = np.where(df.columns.values=='name')[0][0]+1
+        df = df[df.columns.values[:namecol]]
         colnames, arr = eval_tracks_over_bed_df(df,
                                              full_track_paths,
                                              names = self.names,
                                              stats_types = self.stats_types)
-        if self.bw_transform is not None: 
+        if self.track_transform is not None: 
             arr = norm(arr)
         for idx,name in enumerate(colnames):
             df[name] = arr[:,idx]
@@ -269,7 +269,7 @@ class HiC_Dataset(Dataset):
                      graph_regions,
                      target_names,
                      target,
-                     bw_out_file,
+                     track_out_file,
                      pdata,
                      self.chunk_size,
                      self.processed_dir)
@@ -286,7 +286,10 @@ class HiC_Dataset(Dataset):
             dat = torch.load(file).x.shape[0]
             if dat != self.numnodespergraph:
                 os.remove(file)
-        
+                
+        data_files = glob.glob(os.path.join(self.processed_dir,
+                                           "*.pt")
+                             )
         train_files, test_files,_,_ = tts(data_files,
                                           np.ones(len(data_files)),
                                           test_size=self.train_test_split,
@@ -297,10 +300,10 @@ class HiC_Dataset(Dataset):
                                    f"train/data_{idx}.pt")
                          )
         for idx,file in enumerate(test_files):
-            dos.rename(file,
-                       os.path.join(self.processed_dir,
+            os.rename(file,
+                      os.path.join(self.processed_dir,
                                    f"test/data_{idx}.pt")
-                         )
+                     )
 
         
         
