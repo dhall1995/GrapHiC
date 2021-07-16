@@ -1,5 +1,5 @@
 import numpy as np
-from ..layers.GATEConv import Deep_GATEv2_Conv
+from ..layers.GATEConv import Deep_GATE_Conv
 from ..layers.utils import PositionalEncoding
 from ..utils.misc import get_middle_features
 
@@ -9,6 +9,7 @@ import torch.nn.functional as F
 from torch.nn import Parameter, Linear, Sequential, Dropout,BatchNorm1d,ModuleList, ReLU
 
 NUMCLASSES = 3
+NUMNODESPERGRAPH = 201
     
 '''
 WEIGHTED EDGE GRAPH ATTENTION MODULE
@@ -27,8 +28,10 @@ class RGATE_Encoder(torch.nn.Module):
                  pos_embedding_dropout = 0.1,
                  fc_dropout = 0.5,
                  conv_dropout = 0.1,
-                 numclasses = NUMCLASSES
+                 numclasses = NUMCLASSES,
+                 numnodespergraph = NUMNODESPERGRAPH
                 ):
+        self.numnodespergraph = numnodespergraph
         if num_graph_convs < 1:
             print("need at least one graph convolution")
             raise
@@ -67,7 +70,7 @@ class RGATE_Encoder(torch.nn.Module):
 
         #graph convolution layers
         #Encoding layer
-        enc = Deep_GATEv2_Conv(node_in_channels = hidden_channels,
+        enc = Deep_GATE_Conv(node_in_channels = hidden_channels,
                                 node_out_channels = hidden_channels,
                                 edge_in_channels = numedge,
                                 edge_out_channels = numedge,
@@ -77,7 +80,7 @@ class RGATE_Encoder(torch.nn.Module):
                                )
         gconv = [enc]
         #encoder/decoder layer
-        encdec = Deep_GATEv2_Conv(node_in_channels = hidden_channels,
+        encdec = Deep_GATE_Conv(node_in_channels = hidden_channels,
                                    node_out_channels = hidden_channels,
                                    edge_in_channels = numedge,
                                    edge_out_channels = numedge,
@@ -129,7 +132,7 @@ class RGATE_Encoder(torch.nn.Module):
         batch = self.gconv(batch)
 
         #extracting node of interest from graph
-        batch.x = get_middle_features(batch.x)
+        batch.x = get_middle_features(batch.x, numnodes = self.numnodespergraph)
         
         #combining node-level and promoter level representations
         batch.x += batch.prom_x

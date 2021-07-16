@@ -4,7 +4,7 @@ from src.models.recurrent_GATE_encoder import RGATE_Encoder
 
 import torch
 from torch import Tensor
-from torch.nn import CrossEntropyLoss
+from torch.nn import L1Loss
 from torch.utils.data import random_split
 from torch.optim.lr_scheduler import OneCycleLR
 
@@ -51,7 +51,7 @@ class LitWEGATNet(pl.LightningModule):
 
     def shared_step(self, batch):
         pred = self.module(batch).squeeze()
-        loss = F.l1_loss(pred, batch.y.float())
+        loss = L1Loss(pred, batch.y.float())
         return loss, pred
 
     def customlog(self, name, loss, pred):

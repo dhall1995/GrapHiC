@@ -22,7 +22,7 @@ def stats(arr):
     print(f"\tmax:\t{torch.max(arr).item()}")
     print(f"\tmean:\t{torch.mean(arr).item()}")
     
-class GATEConv(MessagePassing):
+class Static_GATEConv(MessagePassing):
     r"""The graph attentional operator from the `"Graph Attention Networks"
     <https://arxiv.org/abs/1710.10903>`_ paper
     .. math::
@@ -232,7 +232,7 @@ class GATEConv(MessagePassing):
 '''
 Module to perform deep edge weighted GAT layers with pre-activation skip-connections 
 '''
-class Deep_GATE_Conv(torch.nn.Module):
+class Static_Deep_GATE_Conv(torch.nn.Module):
     def __init__(self,
                  node_inchannels,
                  node_outchannels,
@@ -243,7 +243,7 @@ class Deep_GATE_Conv(torch.nn.Module):
                  edge_dropout = 0.1
                 ):
         super().__init__()
-        self.conv = GATEConv(in_channels = node_inchannels, 
+        self.conv = Static_GATEConv(in_channels = node_inchannels, 
                                node_out_channels = node_outchannels,
                                edge_channels = edge_inchannels,
                                edge_out_channels = edge_outchannels,
@@ -308,7 +308,7 @@ class Deep_GATE_Conv(torch.nn.Module):
         
         return batch
 
-class GATEv2Conv(MessagePassing):
+class GATEConv(MessagePassing):
     r"""Args:
         in_channels (int): Size of each input sample.
         out_channels (int): Size of each output sample.
@@ -349,7 +349,7 @@ class GATEv2Conv(MessagePassing):
                  att_bias: bool = True,
                  share_weights: bool = True,
                  **kwargs):
-        super(GATEv2Conv, self).__init__(node_dim=0, **kwargs)
+        super(GATEConv, self).__init__(node_dim=0, **kwargs)
 
         self.node_in_channels = node_in_channels
         self.node_out_channels = node_out_channels
@@ -513,7 +513,7 @@ class GATEv2Conv(MessagePassing):
 
     
 
-class Deep_GATEv2_Conv(torch.nn.Module):
+class Deep_GATE_Conv(torch.nn.Module):
     def __init__(self,
                  node_in_channels,
                  node_out_channels,
@@ -524,7 +524,7 @@ class Deep_GATEv2_Conv(torch.nn.Module):
                  edge_dropout = 0.1
                 ):
         super().__init__()
-        self.conv = GATEv2Conv(node_in_channels = node_in_channels, 
+        self.conv = GATEConv(node_in_channels = node_in_channels, 
                                node_out_channels = node_out_channels,
                                edge_in_channels = edge_in_channels,
                                edge_out_channels = edge_out_channels,
@@ -566,8 +566,12 @@ class Deep_GATEv2_Conv(torch.nn.Module):
                               batch.edge_index
                              )
         
-        batch.x = self.node_aggr(batch.x, h)
+        batch.x = self.node_aggr(batch.x, 
+                                 h
+                                )
         
-        batch.edge_attr = self.edge_aggr(batch.edge_attr, edge_h)
+        batch.edge_attr = self.edge_aggr(batch.edge_attr.float(), 
+                                         edge_h
+                                        )
         
         return batch

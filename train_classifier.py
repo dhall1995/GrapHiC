@@ -1,25 +1,33 @@
 import numpy as np
-from sklearn.metrics import precision_score, recall_score
+from random import shuffle
+from sklearn.metrics import (precision_score, 
+                             recall_score,
+                             balanced_accuracy_score,
+                             roc_auc_score
+                            )
+from sklearn.utils.class_weight import compute_class_weight as ccw
 
-from src.Dataset import HiC_Dataset
-from src.models.reccurent_GATE_encoder import RGATE_Encoder
+from GrapHiC.models.recurrent_GATE_encoder import RGATE_Encoder
+from GrapHiC.Dataset import HiC_Dataset
 
 import torch
 from torch import Tensor
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import random_split
 from torch.optim.lr_scheduler import OneCycleLR
+from torch.optim import AdamW
 
 import torch_geometric as tgm
 from torch_geometric.data import DataLoader
 
 import pytorch_lightning as pl
 from pytorch_lightning import loggers as pl_loggers
+from pytorch_lightning.callbacks import LearningRateMonitor
 
-DATASET = "Data/test_dset_18features_custom_norm.pt"
+DATASET = "Data/dset_15difffeatures_500kb_wayneRNAseq.pt"
 NUMEPOCHS = 5000
 NUMCLASSES = 3
-BATCHSIZE = 200
+BATCHSIZE = 100
 LEARNING_RATE = 0.0001
 POS_EMBEDDING_DROPOUT = 0.01
 FULLY_CONNECTED_DROPOUT = 0.01
@@ -55,7 +63,8 @@ class LitGATENet(pl.LightningModule):
 
     def shared_step(self, batch):
         pred = self.module(batch).squeeze()
-        loss = self.criterion(pred, batch.y)
+        loss = self.criterion(pred, 
+                              batch.y.long())
         return loss, pred
 
     def customlog(self, 
@@ -73,50 +82,68 @@ class LitGATENet(pl.LightningModule):
         
         cls = Tensor.cpu(cls)
         actual = Tensor.cpu(actual)
-        
+ 
         precision = precision_score(cls.numpy(), 
                                     actual.numpy(),
-                                    average = 'weighted'
-                                   )
+                                    average = 'weighted')
         recall = recall_score(cls.numpy(), 
                               actual.numpy(),
-                              average = 'weighted'
-                             )
+                              average = 'weighted')
         
-        self.log(f"{name}_acc",correct/total)
-        self.log(f"{name}_precision",precision)
-        self.log(f"{name}_recall", recall)
+        adj_balanced_acc = balanced_accuracy_score(cls.numpy(),
+                                               actual.numpy(),
+                                               adjusted = True)
+        balanced_acc = balanced_accuracy_score(cls.numpy(),
+                                               actual.numpy(),
+                                               adjusted = False)
+        
+        self.log(f"{name}_raw_acc",correct/total)
+        self.log(f"{name}_adjusted_balanced_acc",adj_balanced_acc)
+        self.log(f"{name}_unadjusted_balanced_acc",balanced_acc)
+        self.log(f"{name}_weighted_average_precision",precision)
+        self.log(f"{name}_weighted_average_recall", recall)
         self.log(f"{name}_loss",loss)
 
         
     def training_step(self, batch, batch_idx):
         loss, pred = self.shared_step(batch)
-        self.customlog('train',loss,pred, batch.y)
+        self.customlog('train',
+                       loss,
+                       pred, 
+                       batch.y)
         return loss
 
     def validation_step(self, batch, batch_idx):
         loss, pred = self.shared_step(batch)
-        self.customlog('val',loss,pred, batch.y)
+        self.customlog('val',
+                       loss,
+                       pred, 
+                       batch.y)
         return loss
 
     def test_step(self, batch, batch_idx):
         loss, pred = self.shared_step(batch)
-        self.customlog('test',loss,pred, batch.y)
+        self.customlog('test',
+                       loss,
+                       pred, 
+                       batch.y)
         return loss
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(),
-                                     lr=self.learning_rate
-                                    )
-        return {
-            'optimizer': optimizer,
-            'lr_scheduler': {
-                'scheduler': OneCycleLR(optimizer,
-                                        max_lr = 10*self.learning_rate,
-                                        total_steps = self.numsteps
-                                       )
-            }
-        }
+        optimizer = AdamW(self.parameters(), 
+                                      lr=self.learning_rate)
+        lr_scheduler = {'scheduler': OneCycleLR(
+                                        optimizer,
+                                        max_lr=10*self.learning_rate,
+                                        total_steps = self.numsteps,
+                                        anneal_strategy="cos",
+                                        final_div_factor = 1e3,
+                                    ),
+                        'name': 'learning_rate',
+                        'interval':'step',
+                        'frequency': 1}
+
+        return [optimizer], [lr_scheduler]
 
 
 
@@ -130,49 +157,69 @@ def main(hparams):
     '''
     CONSTRUCTING THE DATALOADERS
     '''
-    print("Loading in memory datasets")
-    dset = torch.load(hparams.dataset)
+    print("Loading datasets")
+    if hparams.inmemory != 1:
+        train_dset = HiC_Dataset("Data")
+        val_dset = HiC_Dataset("Data",train= False)
     
-    print("Balancing classes")
-    vals = [d.y.item() for d in dset]
-    idxs = np.argsort(vals)
-    upidxs = idxs[:5000]
-    downidxs = idxs[-5000:]
-    nonsig_idxs = np.argsort(abs(np.array(vals)))[:5000]
-    balanced_dset = {'down':[dset[idx] for idx in downidxs],
-                     'up': [dset[idx] for idx in upidxs],
-                     'nonsig':[dset[idx] for idx in nonsig_idxs]}
+        print("Calculating class weights")
+        vals = np.array([d.y[0,1].item() for d in train_dset])
+        nums = [np.sum(np.array(vals)==idx) for idx in [0,1,2]]
+        weights = ccw('balanced', 
+                  np.array([0.0,1.0,2.0]),
+                  vals)
+    else:
+        dset = torch.load(hparams.dataset)
+        
+        print("Calculating class weights")
+        #vals = np.array([d.y[0,1].item() for d in dset])
+        #nums = [np.sum(np.array(vals)==idx) for idx in [0,1,2]]
+        #weights = ccw('balanced', 
+        #          np.array([0.0,1.0,2.0]),
+        #          vals)
+        
+        vals = np.array([d.y.item() for d in dset])
+        idxs = {'up': np.argsort(vals)[-5000:],
+                'down': np.argsort(vals)[:5000],
+                'nonsig': np.argsort(abs(vals))[:5000]
+               }
+        newdset = []
+        for cls in ['up','down','nonsig']:
+            for idx in idxs[cls]:
+                d_add = dset[idx]
+                if cls == 'up':
+                    d_add.y = 0.0
+                elif cls == 'down':
+                    d_add.y = 1.0
+                else:
+                    d_add.y = 2.0
+                newdset.append(d_add)
     
-    classes = ('down','nonsig','up')
-    dset = []
-    for idx, key in enumerate(classes):
-        for d in balanced_dset[key]:
-            d.y = idx
-        dset += balanced_dset[key]
-    criterion = CrossEntropyLoss() 
-    
-    numdatapoints = len(dset)
-    trainsize = int(numdatapoints*hparams.trainfraction)
-    train_dset, val_dset = random_split(dset,
-                                        [trainsize, numdatapoints-trainsize],
-                                        generator=torch.Generator().manual_seed(MANUAL_SEED)
-                                       )
+        weights = [1,1,1]
+        dset = newdset
+        shuffle(dset)
+        
+        numdatapoints = len(dset)
+        trainsize = int(numdatapoints*hparams.trainfraction)
+        train_dset, val_dset = random_split(dset,
+                                            [trainsize, numdatapoints-trainsize],
+                                            generator=torch.Generator().manual_seed(MANUAL_SEED)
+                                           )
 
+    classes = ('up','down','nonsig')
+    criterion = CrossEntropyLoss(weight = torch.tensor(weights).float())
+    
     print("Loaded in memory datasets")
     train_loader = DataLoader(train_dset,
                               batch_size=hparams.batchsize,
-                              shuffle = True
+                              shuffle = True,
+                              drop_last=True
                              )
     val_loader = DataLoader(val_dset,
                              batch_size=hparams.batchsize,
-                             shuffle = True
+                             shuffle = True,
+                            drop_last=True
                            )
-    sample_batch = 0
-    for dat in train_loader:
-        sample_batch = dat
-        break
-
-
     '''
     INITIALISING/TRAINING THE MODEL
     '''
@@ -190,27 +237,32 @@ def main(hparams):
                          positional_encoding = hparams.positional_encoding,
                          pos_embedding_dropout = hparams.pdropout,
                          fc_dropout = hparams.fdropout,
-                         conv_dropout = hparams.cdropout
+                         conv_dropout = hparams.cdropout,
+                           numnodespergraph = NUMNODESPERGRAPH
                         )
     Net = LitGATENet(module,
-                      train_loader,
-                      val_loader,
-                      hparams.learning_rate,
-                      hparams.numsteps,
-                      criterion = criterion)
+                     train_loader,
+                     val_loader,
+                     hparams.learning_rate,
+                     hparams.numsteps,
+                     criterion = criterion
+                    )
 
     tb_logger = pl_loggers.TensorBoardLogger(hparams.logdir,
                                              name = hparams.experiment_name,
                                              version = hparams.version
                                              )
+    lr_monitor = LearningRateMonitor(logging_interval='step')
     trainer = pl.Trainer(gpus=hparams.gpus,
                          max_epochs=hparams.epochs,
                          progress_bar_refresh_rate=1,
                          logger=tb_logger,
                          auto_lr_find=hparams.auto_lr_find,
                          resume_from_checkpoint=hparams.checkpoint,
+                         callbacks=[lr_monitor],
                          stochastic_weight_avg=True
                          )
+    
     if hparams.auto_lr_find:
         # Run learning rate finder
         lr_finder = trainer.tuner.lr_find(Net)
@@ -309,7 +361,7 @@ if __name__ == '__main__':
     parser.add_argument('-n',
                         '--numsteps',
                         type = int,
-                        default = 3000)
+                        default = 1000)
     parser.add_argument('-gc',
                         '--graph_convolutions',
                         type = int,
@@ -322,10 +374,10 @@ if __name__ == '__main__':
                         '--fullyconnectedlayers',
                         type = int,
                         default = 10)
-    parser.add_argument('-gc',
-                        '--graph_convolutions',
+    parser.add_argument('-im',
+                        '--inmemory',
                         type = int,
-                        default = 6)
+                        default = 1)
     args = parser.parse_args()
 
     main(args)

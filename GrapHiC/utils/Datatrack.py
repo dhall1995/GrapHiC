@@ -1,4 +1,4 @@
-from .dtrack_utils import binrvps_constantbins, binrvps, pairRegionsIntersection, rvps_to_rvps, binrvps_multi_interval
+from dtrack_utils import binrvps_constantbins, binrvps, pairRegionsIntersection, rvps_to_rvps, binrvps_multi_interval
 from .file_io import rvps_from_bed, rvps_from_npz, rvps_to_npz
 import numpy as np
 import pandas as pd

@@ -80,10 +80,14 @@ if __name__=="__main__":
     parser.add_argument("-tf","--transform",
                         help="Transform to apply to the data. Can either provide a custom transform as in this script or specify 'robust', 'standard' or 'power' to use a scikit-learn defined data transform. Not specifying will result in no transform.",
                         default = None)
+    parser.add_argument("-on","--track_out_names",
+                        help="name of output tracks",
+                        default = 'Data/processed/cooler_track_data_WT.csv',
+                        type=str)
     parser.add_argument("-o","--out_path",
                         help="Folder to save graph objects to",
                         type = str,
-                        default = 'Data/Chromosomes/')
+                        default = 'Data/chromosomes/')
     args = parser.parse_args()
     
     if isinstance(args.cooler_files,str):
@@ -93,7 +97,7 @@ if __name__=="__main__":
         args.chromosomes = [args.chromosomes]
 
     #EVALUATE BIGWIGS OVER COOLER BINS AND SAVE TO FILE
-    track_out_file = os.path.join(self.processed_dir, "cooler_track_data.csv")
+    track_out_file = os.path.join(args.track_out_names)
     print(f"Evaluating tracks over cooler bins and saving to file {track_out_file}")
     df = eval_tracks_over_cooler(args.cooler_files[0],
                                   paths = args.tracks,
@@ -114,13 +118,14 @@ if __name__=="__main__":
                                                  0,
                                                  x)
             
-    if self.track_transform is not None:
-            df = pd.DataFrame(data= norm(df.values.astype('float')),
+    if norm is not None:
+        df = pd.DataFrame(data= norm(df.values.astype('float')),
                               columns = df.columns,
                               index= df.index)
         
         df.to_csv(track_out_file, 
                   sep = "\t")
+    
     
     c = cooler.Cooler(args.cooler_files[0])
     chr_lims = {str(row[0]):int(row[1]) for row in c.chroms()[:].values}

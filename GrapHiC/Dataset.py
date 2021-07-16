@@ -129,21 +129,23 @@ class HiC_Dataset(Dataset):
                 ):
         #Estimate number of objects by rows of our target csv
         self.target = target
-        self.num_objects = pd.read_table(os.path.join(root,
+        if self.target is not None:
+            self.num_objects = pd.read_table(os.path.join(root,
                                                       os.path.join('raw',
                                                                    self.target)
                                                      )
-                                        ).values.shape[0]
+                                            ).values.shape[0]
         
         #Initialise class specific attributes
         self.contacts = contacts
-        c = cooler.Cooler(os.path.join(root,
+        if self.contacts is not None:
+            c = cooler.Cooler(os.path.join(root,
                                        os.path.join('raw/contacts',
                                                     self.contacts[0]
                                                    )
                                       )
                          )
-        self.chr_lims = {str(row[0]):int(row[1]) for row in c.chroms()[:].values}
+            self.chr_lims = {str(row[0]):int(row[1]) for row in c.chroms()[:].values}
         
         if names is None:
             self.names = tracks

@@ -15,4 +15,5 @@ runs
 *.swx
 testing.ipynb
 testing*
-
+Build/*
+*.so
