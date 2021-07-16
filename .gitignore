@@ -15,5 +15,6 @@ runs
 *.swx
 testing.ipynb
 testing*
-Build/*
+build/*
 *.so
+Train_classifier_notebook.ipynb
