@@ -5,6 +5,8 @@ from torch import sigmoid
 from torch.distributions.beta import Beta
 
 from ..layers.utils import reset
+from torch_geometric.utils import (negative_sampling, remove_self_loops,
+                                   add_self_loops)
 
 EPS = 1e-15
 MAX_LOGSTD = 10
@@ -185,7 +187,7 @@ class GAE(torch.nn.Module):
             pos_edge_index, _ = add_self_loops(batch.edge_index)
             
             lims = [torch.where(batch.batch==item)[0][[0,-1]] for item in batch.batch.unique()]
-            negsamples = torch.cat([negative_sampling(b.edge_index[:,(batch.edge_index[0,:]>=lim[0])&(batch.edge_index[0,:]<=lim[1])], 
+            negsamples = torch.cat([negative_sampling(batch.edge_index[:,(batch.edge_index[0,:]>=lim[0])&(batch.edge_index[0,:]<=lim[1])], 
                                     nodespergraph) for lim in lims],
                            dim = 1)
         
@@ -201,12 +203,13 @@ class GAE(torch.nn.Module):
             x = batch.x
             batch.x = z
             pred = self.node_decoder(batch)
-            node_loss = L1Loss(pred,
-                           x)
+            criterion = L1Loss()
+            node_loss = criterion(pred,
+                                  x)
         else:
             node_loss = 0.0
 
-        return pos_loss + neg_loss + node_loss
+        return pos_edge_loss + neg_edge_loss + node_loss
 
     def test_edges(self,
                    z, 
