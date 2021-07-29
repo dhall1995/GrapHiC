@@ -7,7 +7,7 @@ from sklearn.metrics import (precision_score,
                             )
 from sklearn.utils.class_weight import compute_class_weight as ccw
 
-from GrapHiC.models.recurrent_GATE_encoder import RGATE_Encoder
+from GrapHiC.models.GATE_modules import GATE_promoter_module
 from GrapHiC.Dataset import HiC_Dataset
 
 import torch
@@ -44,22 +44,22 @@ class LitGATENet(pl.LightningModule):
                  train_loader,
                  val_loader,
                  learning_rate,
-                 numsteps,
+                 numlrsteps,
                  criterion
                 ):
         super().__init__()
         self.module = module
-        self.learning_rate = learning_rate
         self.train_loader = train_loader
         self.val_loader = val_loader
-        self.numsteps = numsteps
+        self.numsteps = numlrsteps
         self.criterion = criterion
+        self.lr = learning_rate
 
     def train_dataloader(self):
         return self.train_loader
     
-    def validation_dataloader(self):
-        return self.test_loader
+    def val_dataloader(self):
+        return self.val_loader
 
     def shared_step(self, batch):
         pred = self.module(batch).squeeze()
@@ -131,13 +131,13 @@ class LitGATENet(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = AdamW(self.parameters(), 
-                                      lr=self.learning_rate)
+                          lr=self.lr)
         lr_scheduler = {'scheduler': OneCycleLR(
                                         optimizer,
-                                        max_lr=10*self.learning_rate,
+                                        max_lr=10*self.lr,
                                         total_steps = self.numsteps,
                                         anneal_strategy="cos",
-                                        final_div_factor = 1e3,
+                                        final_div_factor = 10,
                                     ),
                         'name': 'learning_rate',
                         'interval':'step',
@@ -226,20 +226,29 @@ def main(hparams):
     NUMCHIP = dset[0].x.shape[1]
     NUMEDGE = dset[0].edge_attr.shape[1]
     NUMNODESPERGRAPH = dset[0].x.shape[0]
-
-    module = RGATE_Encoder(hidden_channels = hparams.hiddenchannels,
-                         numchip = NUMCHIP,
-                         numedge = NUMEDGE,
-                         embedding_layers = hparams.embeddinglayers,
-                         num_fc = hparams.fullyconnectedlayers,
-                         fc_channels = hparams.fullyconnectedchannels,
-                         num_graph_convs = hparams.graph_convolutions,
-                         positional_encoding = hparams.positional_encoding,
-                         pos_embedding_dropout = hparams.pdropout,
-                         fc_dropout = hparams.fdropout,
-                         conv_dropout = hparams.cdropout,
-                           numnodespergraph = NUMNODESPERGRAPH
-                        )
+    
+    if hparams.dropout is not None:
+        hparams.pdropout = hparams.dropout
+        hparams.fdropout = hparams.dropout
+    
+    if hparams.recurrent == 1:
+        hparams.recurrent = True
+    else:
+        hparams.recurrent = False
+        
+    module = GATE_promoter_module(hidden_channels = hparams.hiddenchannels,
+                                  inchannels = NUMCHIP,
+                                  edgechannels = NUMEDGE,
+                                  embedding_layers = hparams.embeddinglayers,
+                                  num_fc = hparams.fullyconnectedlayers,
+                                  fc_channels = hparams.fullyconnectedchannels,
+                                  num_graph_convs = hparams.graph_convolutions,
+                                  positional_encoding = hparams.positional_encoding,
+                                  pos_embedding_dropout = hparams.pdropout,
+                                  fc_dropout = hparams.fdropout,
+                                  conv_dropout = hparams.cdropout,
+                                  recurrent = hparams.recurrent,
+                                  numnodespergraph = NUMNODESPERGRAPH)
     Net = LitGATENet(module,
                      train_loader,
                      val_loader,
@@ -253,18 +262,18 @@ def main(hparams):
                                              version = hparams.version
                                              )
     lr_monitor = LearningRateMonitor(logging_interval='step')
-    trainer = pl.Trainer(gpus=hparams.gpus,
+    
+    if hparams.plot_lr and hparams.auto_lr_find:
+        trainer = pl.Trainer(gpus=hparams.gpus,
                          max_epochs=hparams.epochs,
                          progress_bar_refresh_rate=1,
                          logger=tb_logger,
-                         auto_lr_find=hparams.auto_lr_find,
+                         auto_lr_find=False,
                          resume_from_checkpoint=hparams.checkpoint,
                          callbacks=[lr_monitor],
                          stochastic_weight_avg=True
                          )
     
-    if hparams.auto_lr_find:
-        # Run learning rate finder
         lr_finder = trainer.tuner.lr_find(Net)
 
         # Results can be found in
@@ -277,10 +286,32 @@ def main(hparams):
 
         # Pick point based on plot, or get suggestion
         new_lr = lr_finder.suggestion()
-
         # update hparams of the model
         Net.hparams.lr = new_lr
-
+    elif hparams.auto_lr_find:
+        trainer = pl.Trainer(gpus=hparams.gpus,
+                         max_epochs=hparams.epochs,
+                         progress_bar_refresh_rate=1,
+                         logger=tb_logger,
+                         auto_lr_find=True,
+                         resume_from_checkpoint=hparams.checkpoint,
+                         callbacks=[lr_monitor],
+                         stochastic_weight_avg=True
+                         )
+        
+        trainer.tune(Net)
+    else:
+        trainer = pl.Trainer(gpus=hparams.gpus,
+                         max_epochs=hparams.epochs,
+                         progress_bar_refresh_rate=1,
+                         logger=tb_logger,
+                         auto_lr_find=False,
+                         resume_from_checkpoint=hparams.checkpoint,
+                         callbacks=[lr_monitor],
+                         stochastic_weight_avg=True
+                         )
+        Net.hparams.lr = hparams.learning_rate
+        
     trainer.fit(Net, train_loader, val_loader)
 
 
@@ -361,7 +392,7 @@ if __name__ == '__main__':
     parser.add_argument('-n',
                         '--numsteps',
                         type = int,
-                        default = 1000)
+                        default = int(1e6))
     parser.add_argument('-gc',
                         '--graph_convolutions',
                         type = int,
@@ -376,6 +407,14 @@ if __name__ == '__main__':
                         default = 10)
     parser.add_argument('-im',
                         '--inmemory',
+                        type = int,
+                        default = 1)
+    parser.add_argument('-dr',
+                        '--dropout',
+                        type = float,
+                        default = None)
+    parser.add_argument('-r',
+                        '--recurrent',
                         type = int,
                         default = 1)
     args = parser.parse_args()

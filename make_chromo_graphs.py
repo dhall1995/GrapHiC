@@ -80,7 +80,7 @@ if __name__=="__main__":
     parser.add_argument("-tf","--transform",
                         help="Transform to apply to the data. Can either provide a custom transform as in this script or specify 'robust', 'standard' or 'power' to use a scikit-learn defined data transform. Not specifying will result in no transform.",
                         default = None)
-    parser.add_argument("-on","--track_out_names",
+    parser.add_argument("-ton","--track_out_names",
                         help="name of output tracks",
                         default = 'Data/processed/cooler_track_data_WT.csv',
                         type=str)

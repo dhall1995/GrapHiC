@@ -63,9 +63,9 @@ class Static_GATEConv(MessagePassing):
     _alpha: OptTensor
 
     def __init__(self, 
-                 in_channels: Union[int, Tuple[int, int]],
-                 edge_channels: int,
+                 node_in_channels: Union[int, Tuple[int, int]],
                  node_out_channels: int,
+                 edge_in_channels: int,
                  edge_out_channels: int,
                  heads: int = 1, 
                  concat: bool = True,
@@ -78,9 +78,9 @@ class Static_GATEConv(MessagePassing):
         kwargs.setdefault('aggr', 'add')
         super(GATEConv, self).__init__(node_dim=0, **kwargs)
 
-        self.in_channels = in_channels
-        self.out_channels = node_out_channels
-        self.edge_channels = edge_channels
+        self.node_in_channels = node_in_channels
+        self.node_out_channels = node_out_channels
+        self.edge_in_channels = edge_in_channels
         self.edge_out_channels = edge_out_channels
         self.heads = heads
         self.concat = concat
@@ -146,7 +146,7 @@ class Static_GATEConv(MessagePassing):
                 :obj:`(edge_index, attention_weights)`, holding the computed
                 attention weights for each edge. (default: :obj:`None`)
         """        
-        H, C, E = self.heads, self.out_channels, self.edge_out_channels
+        H, C, E = self.heads, self.node_out_channels, self.edge_out_channels
 
         x_l: OptTensor = None
         x_r: OptTensor = None
@@ -186,7 +186,7 @@ class Static_GATEConv(MessagePassing):
         self._alpha = None
         
         if self.concat:
-            out = out.view(-1, self.heads * self.out_channels)
+            out = out.view(-1, self.heads * self.node_out_channels)
             edge_attr = out.view(-1, self.heads * self.edge_out_channels)
         else:
             out = out.max(dim=1)[0]
@@ -223,9 +223,13 @@ class Static_GATEConv(MessagePassing):
         return x_j * alpha.unsqueeze(-1)
 
     def __repr__(self):
-        return '{}({}, {}, heads={})'.format(self.__class__.__name__,
-                                             self.in_channels,
-                                             self.out_channels, self.heads)
+        return '{}(node linear in:{}, node linear out:{}, edge linear in: {}, edge linear out: {}, heads={})'.format(self.__class__.__name__,
+                                             self.node_in_channels,
+                                             self.node_out_channels,
+                                             self.edge_in_channels,
+                                             self.edge_out_channels,
+                                             self.heads)
+    
 
 
     
@@ -243,13 +247,13 @@ class Static_Deep_GATE_Conv(torch.nn.Module):
                  edge_dropout = 0.1
                 ):
         super().__init__()
-        self.conv = Static_GATEConv(in_channels = node_inchannels, 
-                               node_out_channels = node_outchannels,
-                               edge_channels = edge_inchannels,
-                               edge_out_channels = edge_outchannels,
-                               heads = heads,
-                               concat = False
-                              )
+        self.conv = Static_GATEConv(node_in_channels = node_inchannels, 
+                                    node_out_channels = node_outchannels,
+                                    edge_in_channels = edge_inchannels,
+                                    edge_out_channels = edge_outchannels,
+                                    heads = heads,
+                                    concat = False
+                                   )
         self.node_norm = BatchNorm(node_inchannels)
         self.edge_norm = BatchNorm(edge_inchannels)
         self.node_aggr = MessageNorm(learn_scale = True)
@@ -506,9 +510,13 @@ class GATEConv(MessagePassing):
         return x_j * alpha.unsqueeze(-1)
 
     def __repr__(self):
-        return '{}({}, {}, heads={})'.format(self.__class__.__name__,
-                                             self.in_channels,
-                                             self.out_channels, self.heads)
+        return '{}(node linear in:{}, node linear out:{}, edge linear in: {}, edge linear out: {}, heads={}, attention channels {})'.format(self.__class__.__name__,
+                                             self.node_in_channels,
+                                             self.node_out_channels,
+                                             self.edge_in_channels,
+                                             self.edge_out_channels,
+                                             self.heads,
+                                             self.attention_channels)
     
 
     
