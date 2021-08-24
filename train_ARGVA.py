@@ -2,7 +2,7 @@ import numpy as np
 from random import shuffle
 
 from GrapHiC.models.GATE_modules import GATE_variational_encoder, GATE_decoder
-from GrapHiC.models.autoencoder import ARGVA
+from GrapHiC.models.lightning_nets import LitARGVA
 from GrapHiC.Dataset import HiC_Dataset
 
 import torch
@@ -11,6 +11,7 @@ from torch.nn import CrossEntropyLoss, L1Loss
 from torch.utils.data import random_split
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.optim import AdamW
+from torch.nn import Linear, Sequential, Dropout,BatchNorm1d, ReLU
 
 import torch_geometric as tgm
 from torch_geometric.data import DataLoader
@@ -19,13 +20,13 @@ import pytorch_lightning as pl
 from pytorch_lightning import loggers as pl_loggers
 from pytorch_lightning.callbacks import LearningRateMonitor
 
-DATASET = "Data/dset_15difffeatures_500kb_wayneRNAseq.pt"
+DATASET = "Data/dset_WTfeatures_goodcoverage_500kb_wayneRNAseq.pt"
 NUMEPOCHS = 5000
 BATCHSIZE = 100
-LEARNING_RATE = 0.0001
+LEARNING_RATE = 0.01
 POS_EMBEDDING_DROPOUT = 0.01
 FULLY_CONNECTED_DROPOUT = 0.01
-CONVOLUTIONAL_DROPOUT = 0.01
+CONVOLUTIONAL_DROPOUT = 0.0
 MANUAL_SEED = 30
 
 class Discriminator(torch.nn.Module):
@@ -43,8 +44,8 @@ class Discriminator(torch.nn.Module):
         lin = []
         for idx in torch.arange(numlayers):
             lin.append(BatchNorm1d(fc_channels[idx]))
-            lin.append(torch.nn.ReLU())
-            lin.append(torch.nn.Dropout(p=dropout))
+            lin.append(ReLU())
+            lin.append(Dropout(p=dropout))
             lin.append(Linear(fc_channels[idx],fc_channels[idx+1]))
         self.lin = Sequential(*lin)
 
@@ -54,122 +55,6 @@ class Discriminator(torch.nn.Module):
 '''
 LIGHTNING NET
 '''
-class LitARGVA(pl.LightningModule):
-    def __init__(self,
-                 encoder,
-                 node_decoder,
-                 discriminator,
-                 negsampling,
-                 numnodespergraph,
-                 learning_rate,
-                 numlrsteps,
-                 criterion
-                ):
-        super().__init__()
-        self.module = ARGVA(encoder, 
-                            discriminator, 
-                            node_decoder)
-        self.numsteps = numlrsteps
-        self.criterion = criterion
-        self.lr = learning_rate
-        self.negsampling = negsampling
-        self.numnodespergraph = numnodespergraph
-        
-        # cache for generated latents
-        self.generated_latents = None
-
-    def shared_step(self, batch, name, optimizer_idx):
-        # train generator
-        if optimizer_idx == 0:
-            #store original graph descriptors
-            x = b.x
-            ea = b.edge_attr
-            ei = b.edge_index
-            #variational encoding
-            self.generated_latents = self.module.encode(b)
-            #restore input edge features and node features
-            b.edge_index = ei.long()
-            b.x = x
-        
-            recon_loss = self.module.VGAE.recon_loss(self.generated_latents, 
-                                                 b,
-                                                 negsampling = self.negsampling, 
-                                                 nodespergraph = self.numnodespergraph)
-            kl_loss = (1/b.num_nodes)*self.module.kl_loss()
-            reg_loss = self.module.reg_loss(self.generated_latents)
-            
-            self.log(f"{name}_recon_loss",recon_loss)
-            self.log(f"{name}_kl_loss",kl_loss)
-            self.log(f"{name}_reg_loss",reg_loss)
-            
-            vgae_loss = recon_loss + kl_loss + reg_loss
-            
-            self.log(f"{name}_VGAE_loss",vgae_loss)
-            
-            tqdm_dict = {f'{name}_VGAE_loss': vgae_loss}
-            output = OrderedDict({
-                'loss': vgae_loss,
-                'progress_bar': tqdm_dict,
-                'log': tqdm_dict
-            })
-            return output
-        
-        # train discriminator
-        if optimizer_idx == 1:
-            disc_loss = self.module.discriminator_loss(self.generated_latents)
-            
-            tqdm_dict = {f'{name}_d_loss': disc_loss}
-            output = OrderedDict({
-                'loss': disc_loss,
-                'progress_bar': tqdm_dict,
-                'log': tqdm_dict
-            })
-            return output
-
-        
-    def training_step(self, batch, batch_idx):
-        output = self.shared_step(batch)
-        return output
-
-    def validation_step(self, batch, batch_idx):
-        output = self.shared_step(batch)
-        return output
-
-    def test_step(self, batch, batch_idx):
-        return 0
-
-    def configure_optimizers(self):
-        VGAE_optimizer = AdamW(self.module.VGAE.parameters(), 
-                          lr=self.lr)
-        VGAE_lr_scheduler = {'scheduler': OneCycleLR(
-                                        VGAE_optimizer,
-                                        max_lr=10*self.lr,
-                                        total_steps = self.numsteps,
-                                        anneal_strategy="cos",
-                                        final_div_factor = 10,
-                                    ),
-                        'name': 'learning_rate',
-                        'interval':'step',
-                        'frequency': 1}
-        
-        disc_optimizer = AdamW(self.module.discriminator.parameters(), 
-                          lr=self.lr)
-        disc_lr_scheduler = {'scheduler': OneCycleLR(
-                                        disc_optimizer,
-                                        max_lr=10*self.lr,
-                                        total_steps = self.numsteps,
-                                        anneal_strategy="cos",
-                                        final_div_factor = 10,
-                                    ),
-                        'name': 'learning_rate',
-                        'interval':'step',
-                        'frequency': 1}
-
-        return [
-            {'optimizer': VGAE_optimizer, 'frequency': 10,'lr_scheduler':VGAE_lr_scheduler},
-            {'optimizer': disc_optimizer, 'frequency': 10,'lr_scheduler':disc_lr_scheduler}
-        ]
-
 
 class MyDataModule(pl.LightningDataModule):
     def __init__(self,
@@ -185,20 +70,20 @@ class MyDataModule(pl.LightningDataModule):
                                             generator=torch.Generator().manual_seed(MANUAL_SEED)
                                            )
         self.batch_size = batch_size
-        self.inchannels = dset[0].x.shape[1]
-        self.edgechannels = dset[0].edge_attr.shape[1]
-        self.numnodespergraph = dset[0].x.shape[0]
+        self.inchannels = self.dset[0].x.shape[1]
+        self.edgechannels = self.dset[0].edge_attr.shape[1]
+        self.numnodespergraph = self.dset[0].x.shape[0]
 
     def train_dataloader(self):
         return DataLoader(self.train_dset,
-                          batch_size=self.batchsize,
+                          batch_size=self.batch_size,
                           shuffle = True,
                           drop_last=True
                          )
 
     def val_dataloader(self):
         return DataLoader(self.val_dset,
-                          batch_size=self.batchsize,
+                          batch_size=self.batch_size,
                           shuffle = True,
                           drop_last=True
                          )
@@ -206,9 +91,10 @@ class MyDataModule(pl.LightningDataModule):
 MAIN FUNCTION
 '''
 def main(hparams):
-    if hparams.hiddenchannels%2 !=0 and hparams.positional_encoding:
+    torch.autograd.set_detect_anomaly(True)
+    if hparams.graphconvolution_hiddenchannels%2 !=0 and hparams.positional_encoding:
         print("positional encoding requires an even number of hidden channels, adding one to hidden channels")
-        hparams.hiddenchannels += 1
+        hparams.graphconvolution_hiddenchannels += 1
     '''
     CONSTRUCTING THE DATALOADERS
     '''
@@ -247,12 +133,14 @@ def main(hparams):
                                        fc_dropout = hparams.fdropout,
                                        conv_dropout = hparams.cdropout,
                                        recurrent = hparams.recurrent,
-                                       numnodespergraph = datamod.numnodespergraph)
+                                       parameter_efficient = False,
+                                       attention_channels = hparams.graphconvolution_hiddenchannels
+                                      )
     
     node_decoder = GATE_decoder(hidden_channels = hparams.graphconvolution_hiddenchannels,
                                 inchannels = hparams.latentchannels,
                                 edgechannels = datamod.edgechannels,
-                                outchannels = hparams.latentchannels,
+                                outchannels = datamod.inchannels,
                                 embedding_layers = hparams.embeddinglayers,
                                 num_fc = hparams.fullyconnectedlayers,
                                 fc_channels = hparams.fullyconnectedchannels,
@@ -262,21 +150,20 @@ def main(hparams):
                                 fc_dropout = hparams.fdropout,
                                 conv_dropout = hparams.cdropout,
                                 recurrent = hparams.recurrent,
-                                numnodespergraph = datamod.numnodespergraph)
+                                parameter_efficient = False,
+                                attention_channels = hparams.graphconvolution_hiddenchannels
+                               )
             
     discriminator = Discriminator(latentchannels = hparams.latentchannels,
                                   hiddenchannels = hparams.discriminator_hiddenchannels,
                                   numlayers = hparams.discriminator_layers,
                                   dropout = hparams.fdropout)
             
-    Net = LitGATENet(encoder,
-                     node_decoder,
-                     discriminator,
-                     hparams.negsampling,
-                     datamod.numnodespergraph,
-                     hparams.learning_rate,
-                     hparams.numsteps,
-                     criterion = criterion
+    Net = LitARGVA(encoder,
+                   node_decoder,
+                   discriminator,
+                   datamod.numnodespergraph,
+                   inputhparams = hparams
                     )
 
     tb_logger = pl_loggers.TensorBoardLogger(hparams.logdir,
@@ -292,8 +179,7 @@ def main(hparams):
                          logger=tb_logger,
                          auto_lr_find=False,
                          resume_from_checkpoint=hparams.checkpoint,
-                         callbacks=[lr_monitor],
-                         stochastic_weight_avg=True
+                         callbacks=[lr_monitor]
                          )
     
         lr_finder = trainer.tuner.lr_find(Net)
@@ -317,8 +203,7 @@ def main(hparams):
                          logger=tb_logger,
                          auto_lr_find=True,
                          resume_from_checkpoint=hparams.checkpoint,
-                         callbacks=[lr_monitor],
-                         stochastic_weight_avg=True
+                         callbacks=[lr_monitor]
                          )
         
         trainer.tune(Net)
@@ -329,8 +214,7 @@ def main(hparams):
                          logger=tb_logger,
                          auto_lr_find=False,
                          resume_from_checkpoint=hparams.checkpoint,
-                         callbacks=[lr_monitor],
-                         stochastic_weight_avg=True
+                         callbacks=[lr_monitor]
                          )
         Net.hparams.lr = hparams.learning_rate
         
@@ -339,6 +223,7 @@ def main(hparams):
 
 if __name__ == '__main__':
     from argparse import ArgumentParser
+    from argparse import Namespace
     parser = ArgumentParser()
     parser.add_argument('-g',
                         '--gpus',
@@ -455,6 +340,10 @@ if __name__ == '__main__':
                         '--negsampling',
                         type = int,
                         default = 1)
+    parser.add_argument('-cdf',
+                        '--cdf_tol',
+                        type = float,
+                        default = 0.02)
     args = parser.parse_args()
 
     main(args)

@@ -47,8 +47,10 @@ def make_graph(clrs,
     
     add_binned_data_to_graphlist(gdict[chrom],
                                  binned_data)
+    
+    gdict[chrom][0]['edge_attrs'] = mytransform(gdict[chrom][0]['edge_attrs'])
         
-    return gdict[chrom][0],chrom
+    return gdict[chrom][0], chrom
     
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description='Construct feature matrices for all Hi-C bins within a cooler file, provided some bigwig files', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -75,14 +77,14 @@ if __name__=="__main__":
     parser.add_argument("-s","--statistics_types",
                         help="Statistics of each track to collect over each specified region and cooler bin",
                         nargs = "+",
-                        default = 'max',
+                        default = 'mean',
                         type=str)
     parser.add_argument("-tf","--transform",
                         help="Transform to apply to the data. Can either provide a custom transform as in this script or specify 'robust', 'standard' or 'power' to use a scikit-learn defined data transform. Not specifying will result in no transform.",
                         default = None)
     parser.add_argument("-ton","--track_out_names",
                         help="name of output tracks",
-                        default = 'Data/processed/cooler_track_data_WT.csv',
+                        default = 'cooler_track_data_WT.csv',
                         type=str)
     parser.add_argument("-o","--out_path",
                         help="Folder to save graph objects to",
@@ -97,7 +99,8 @@ if __name__=="__main__":
         args.chromosomes = [args.chromosomes]
 
     #EVALUATE BIGWIGS OVER COOLER BINS AND SAVE TO FILE
-    track_out_file = os.path.join(args.track_out_names)
+    track_out_file = os.path.join(args.out_path, 
+                                  args.track_out_names)
     print(f"Evaluating tracks over cooler bins and saving to file {track_out_file}")
     df = eval_tracks_over_cooler(args.cooler_files[0],
                                   paths = args.tracks,

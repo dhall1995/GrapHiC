@@ -9,6 +9,8 @@ import torch.nn.functional as F
 from torch.nn import Parameter, Linear, Sequential, Dropout,BatchNorm1d,ModuleList, ReLU
 from torch import sigmoid
 
+from torch_geometric.utils import dropout_adj
+
 NUMCLASSES = 3
 NUMNODESPERGRAPH = 201
     
@@ -20,7 +22,7 @@ class GATE_module(torch.nn.Module):
                  hidden_channels=20,
                  inchannels = 15,
                  edgechannels = 2,
-                 heads = 4,
+                 heads = 5,
                  num_graph_convs = 5,
                  embedding_layers = 2,
                  num_fc = 5,
@@ -28,8 +30,13 @@ class GATE_module(torch.nn.Module):
                  positional_encoding = True,
                  pos_embedding_dropout = 0.1,
                  fc_dropout = 0.5,
-                 conv_dropout = 0.1,
-                 recurrent = True
+                 edge_dropout = 0.1,
+                 recurrent = True,
+                 parameter_efficient = True,
+                 attention_channels = None,
+                 principal_neighbourhood_aggregation = False,
+                 deg = None,
+                 aggr = 'add'
                 ):
         if num_graph_convs < 1:
             print("need at least one graph convolution")
@@ -38,6 +45,7 @@ class GATE_module(torch.nn.Module):
 
         super().__init__()
         torch.manual_seed(12345)
+        self.edge_dropout = edge_dropout
 
         #number of input chip features
         self.inchannels = inchannels
@@ -70,35 +78,47 @@ class GATE_module(torch.nn.Module):
         #graph convolution layers
         #Encoding layer
         enc = Deep_GATE_Conv(node_in_channels = hidden_channels,
-                                node_out_channels = hidden_channels,
-                                edge_in_channels = edgechannels,
-                                edge_out_channels = edgechannels,
-                                heads = heads,
-                                node_dropout = conv_dropout,
-                                edge_dropout = conv_dropout
+                             node_out_channels = hidden_channels,
+                             edge_in_channels = edgechannels,
+                             edge_out_channels = edgechannels,
+                             heads = heads,
+                             dropout = fc_dropout,
+                             attention_channels = attention_channels,
+                             parameter_efficient = parameter_efficient,
+                             principal_neighbourhood_aggregation = principal_neighbourhood_aggregation,
+                             deg = deg,
+                             aggr=aggr
                                )
         gconv = [enc]
         #encoder/decoder layer
         if recurrent:
             encdec = Deep_GATE_Conv(node_in_channels = hidden_channels,
-                                   node_out_channels = hidden_channels,
-                                   edge_in_channels = edgechannels,
-                                   edge_out_channels = edgechannels,
-                                   heads = heads,
-                                   node_dropout = conv_dropout,
-                                   edge_dropout = conv_dropout
+                                    node_out_channels = hidden_channels,
+                                    edge_in_channels = edgechannels,
+                                    edge_out_channels = edgechannels,
+                                    heads = heads,
+                                    dropout = fc_dropout,
+                                    attention_channels = attention_channels,
+                                    parameter_efficient = parameter_efficient,
+                                    principal_neighbourhood_aggregation = principal_neighbourhood_aggregation,
+                                    deg = deg,
+                                    aggr=aggr
                                     )
             for idx in np.arange(num_graph_convs-1):
                 gconv.append(encdec)
         else:
             for idx in np.arange(num_graph_convs-1):
                 enc = Deep_GATE_Conv(node_in_channels = hidden_channels,
-                                   node_out_channels = hidden_channels,
-                                   edge_in_channels = edgechannels,
-                                   edge_out_channels = edgechannels,
-                                   heads = heads,
-                                   node_dropout = conv_dropout,
-                                   edge_dropout = conv_dropout
+                                     node_out_channels = hidden_channels,
+                                     edge_in_channels = edgechannels,
+                                     edge_out_channels = edgechannels,
+                                     heads = heads,
+                                     dropout = fc_dropout,
+                                     attention_channels = attention_channels,
+                                     parameter_efficient = parameter_efficient,
+                                     principal_neighbourhood_aggregation = principal_neighbourhood_aggregation,
+                                     deg = deg,
+                                     aggr=aggr
                                     )
                 gconv.append(enc)
 
@@ -116,10 +136,16 @@ class GATE_module(torch.nn.Module):
         self.lin = Sequential(*lin)
 
     def forward(self,
-                batch
+                batch,
+                propagate_messages = True
                ):
         batch.edge_attr[torch.isnan(batch.edge_attr)] = 0
         batch.x[torch.isnan(batch.x)] = 0
+        
+        #randomly drop edges
+        batch.edge_index, batch.edge_attr = dropout_adj(batch.edge_index,
+                                                         edge_attr=batch.edge_attr,
+                                                         p=self.edge_dropout)
         
         #initial dropout and embedding
         batch.x = self.embedding[0](batch.x.float())
@@ -127,10 +153,11 @@ class GATE_module(torch.nn.Module):
             batch.x = batch.x + mod(batch.x.float())
 
         #positional encoding
-        if self.positional_encoding:
+        if self.positional_encoding and propagate_messages:
             batch.x = self.posencoder(batch.x,
                                       batch.batch)
-
+        
+        batch.propagate_messages = propagate_messages
         #graph convolutions
         batch = self.gconv(batch)
 
@@ -147,7 +174,7 @@ class GATE_promoter_module(torch.nn.Module):
                  hidden_channels=20,
                  inchannels = 15,
                  edgechannels = 2,
-                 heads = 4,
+                 heads = 5,
                  num_graph_convs = 2,
                  embedding_layers = 2,
                  num_fc = 1,
@@ -155,10 +182,15 @@ class GATE_promoter_module(torch.nn.Module):
                  positional_encoding = True,
                  pos_embedding_dropout = 0.1,
                  fc_dropout = 0.5,
-                 conv_dropout = 0.1,
+                 edge_dropout = 0.1,
                  outchannels = 3,
                  recurrent = True,
-                 numnodespergraph = NUMNODESPERGRAPH
+                 numnodespergraph = NUMNODESPERGRAPH,
+                 parameter_efficient = True,
+                 attention_channels = None,
+                 principal_neighbourhood_aggregation = False,
+                 deg = None,
+                 aggr = 'add'
                 ):
         super().__init__()
         self.numnodespergraph = numnodespergraph
@@ -175,8 +207,14 @@ class GATE_promoter_module(torch.nn.Module):
                                   positional_encoding,
                                   pos_embedding_dropout,
                                   fc_dropout,
-                                  conv_dropout,
-                                  recurrent)
+                                  edge_dropout,
+                                  recurrent,
+                                  parameter_efficient,
+                                  attention_channels,
+                                  principal_neighbourhood_aggregation,
+                                  deg,
+                                  aggr
+                                 )
         
         #final readout function
         self.readout = Linear(fc_channels, outchannels)
@@ -185,34 +223,54 @@ class GATE_promoter_module(torch.nn.Module):
         self.local_weight_att = Linear(2*fc_channels,1)                
         
     def forward(self,
-                batch):
-        x = self.module(batch)
+                batch,
+                use_prom = True,
+                use_graph = True,
+                return_local_weight = False,
+                return_embedding = False
+               ):
+        x = self.module(batch,
+                        propagate_messages = use_graph
+                       )
         
-        #extracting node of interest from graph
-        x = get_middle_features(x,
-                                numnodes = self.numnodespergraph) 
+        if not use_prom:
+            #extracting node of interest from graph
+            x = get_middle_features(x,
+                                    numnodes = self.numnodespergraph)
+            x = self.readout(x)
+            if return_local_weight:
+                return x, 0
+            else:
+                return x
         
         prom_x = batch.prom_x.view(-1,self.inchannels).float()
         prom_x[torch.isnan(prom_x)] = 0
-        prom_x = self.module.embedding[0](prom_x.float())
-        for mod in self.module.embedding[1:]:
-            prom_x = prom_x + mod(prom_x.float())
+        batch.x = prom_x
+        prom_x = self.module(batch, 
+                             propagate_messages = False)
         
-        prom_x = self.module.lin(prom_x)
+        #extracting node of interest from graph
+        x = get_middle_features(x,
+                                numnodes = self.numnodespergraph)
         
         #combining node-level and promoter level representations via an attention mechanism
         att_in = F.leaky_relu(torch.cat([prom_x,
                                          x], 
                                         dim = 1))
         
-        local_weight = self.local_weight_att(att_in) 
+        local_weight = sigmoid(self.local_weight_att(att_in)) 
         
         x = local_weight*prom_x + (1-local_weight)*x
-
+        
+        if return_embedding:
+            return x
         # 4. Apply readout layers
         x = self.readout(x)
-
-        return x
+        
+        if return_local_weight:
+            return x, local_weight
+        else:
+            return x
 
 '''
 Get a readout from a GATE module for the mean and logstd of a latent variable distribution
@@ -230,9 +288,14 @@ class GATE_variational_encoder(torch.nn.Module):
                  positional_encoding = True,
                  pos_embedding_dropout = 0.1,
                  fc_dropout = 0.5,
-                 conv_dropout = 0.1,
+                 edge_dropout = 0.1,
                  outchannels = 2,
-                 recurrent = True
+                 recurrent = True,
+                 parameter_efficient = False,
+                 attention_channels = None,
+                 principal_neighbourhood_aggregation = False,
+                 deg = None,
+                 aggr = 'add'
                 ):
         super().__init__()
         self.module = GATE_module(hidden_channels,
@@ -246,8 +309,14 @@ class GATE_variational_encoder(torch.nn.Module):
                                   positional_encoding,
                                   pos_embedding_dropout,
                                   fc_dropout,
-                                  conv_dropout,
-                                  recurrent)
+                                  edge_dropout,
+                                  recurrent,
+                                  parameter_efficient,
+                                  attention_channels,
+                                  principal_neighbourhood_aggregation,
+                                  deg,
+                                  aggr
+                                 )
         
         #final readout function
         self.readout_mu = Linear(fc_channels, 
@@ -281,9 +350,14 @@ class GATE_decoder(torch.nn.Module):
                  positional_encoding = True,
                  pos_embedding_dropout = 0.1,
                  fc_dropout = 0.5,
-                 conv_dropout = 0.1,
+                 edge_dropout = 0.1,
                  outchannels = 15,
-                 recurrent = True
+                 recurrent = True,
+                 parameter_efficient = True,
+                 attention_channels = None,
+                 principal_neighbourhood_aggregation = False,
+                 deg = None,
+                 aggr = 'add'
                 ):
         super().__init__()
         self.module = GATE_module(hidden_channels,
@@ -297,8 +371,14 @@ class GATE_decoder(torch.nn.Module):
                                   positional_encoding,
                                   pos_embedding_dropout,
                                   fc_dropout,
-                                  conv_dropout,
-                                  recurrent)
+                                  edge_dropout,
+                                  recurrent,
+                                  parameter_efficient,
+                                  attention_channels,
+                                  principal_neighbourhood_aggregation,
+                                  deg,
+                                  aggr
+                                 )
         
         #final readout function
         self.readout = Linear(fc_channels, 

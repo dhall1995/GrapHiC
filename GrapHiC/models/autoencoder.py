@@ -4,12 +4,15 @@ from torch.nn import L1Loss, Parameter
 from torch import sigmoid
 from torch.distributions.beta import Beta
 
+from scipy.special import betainc
+
 from ..layers.utils import reset
-from torch_geometric.utils import (negative_sampling, remove_self_loops,
+from torch_geometric.utils import (batched_negative_sampling, remove_self_loops,
                                    add_self_loops)
 
 EPS = 1e-15
 MAX_LOGSTD = 10
+MAX_LOGPROB = 50
 TOL = 0.001
 CHUNKSIZE = 1000
 NODESPERGRAPH = 51
@@ -64,7 +67,8 @@ class BetaPriorDecoder(torch.nn.Module):
                 edge_index,
                 edge_attr,
                 chunksize = CHUNKSIZE,
-                tol = TOL
+                tol = TOL,
+                cdf_tol = None
                ):
         r"""Decodes the latent variables :obj:`z` into edge probabilities for
         the given node-pairs :obj:`edge_index`.
@@ -84,15 +88,51 @@ class BetaPriorDecoder(torch.nn.Module):
 
         lims = torch.arange(0,
                             edge_attr.shape[0],
-                            chunksize)
-        edge_logprobs = torch.zeros(edge_attr.shape[0])
+                            chunksize).cuda()
+        edge_logprobs = []
+        if cdf_tol is not None:
+            lims_down = torch.clone(Tensor.cpu(torch.clamp(edge_attr - cdf_tol, 
+                                                           min = tol)
+                                              )
+                                   ).detach()
+            lims_up = torch.clone(Tensor.cpu(torch.clamp(edge_attr + cdf_tol,
+                                                         max = 1-tol)
+                                            )
+                                 ).detach()
+            posterior_alpha = Tensor.cpu(posterior_alpha).detach()
+            posterior_beta = Tensor.cpu(posterior_beta).detach()
         for lim in lims[:-1]:
-            edge_logprobs[lim:lim+chunksize] = -Beta(posterior_alpha[lim:lim+chunksize],
-                                                     posterior_beta[lim:lim+chunksize]).log_prob(edge_attr[lim:lim+chunksize])
-        edge_logprobs[lims[-1]:] = -Beta(posterior_alpha[lims[-1]:],
-                                         posterior_beta[lims[-1]:]).log_prob(edge_attr[lims[-1]:])
+            if cdf_tol is not None:
+                cdf_down = betainc(posterior_alpha[lim:lim+chunksize],
+                                   posterior_beta[lim:lim+chunksize],
+                                   lims_down[lim:lim+chunksize])
+                cdf_up = betainc(posterior_alpha[lim:lim+chunksize],
+                                 posterior_beta[lim:lim+chunksize],
+                                 lims_up[lim:lim+chunksize])
+                prob = cdf_up-cdf_down
+                edge_logprobs.append(-torch.log(prob))
+            else:
+                edge_logprobs.append(-Beta(posterior_alpha[lim:lim+chunksize],
+                                           posterior_beta[lim:lim+chunksize]).log_prob(edge_attr[lim:lim+chunksize])
+                                    )
+                
+        if cdf_tol is not None:
+            cdf_down = betainc(posterior_alpha[lims[-1]:],
+                               posterior_beta[lims[-1]:],
+                               lims_down[lims[-1]:])
+            cdf_up = betainc(posterior_alpha[lims[-1]:],
+                             posterior_beta[lims[-1]:],
+                             lims_up[lims[-1]:])
+            prob = cdf_up-cdf_down
+            edge_logprobs.append(-torch.log(prob))
+        else:
+            edge_logprobs.append(-Beta(posterior_alpha[lims[-1]:],
+                                       posterior_beta[lims[-1]:]).log_prob(edge_attr[lims[-1]:])
+                                )
         
-        
+        edge_logprobs = torch.clamp(torch.cat(edge_logprobs).cuda(),
+                                    max = MAX_LOGPROB)
+                                    
         return edge_logprobs
 
     def forward_all(self, 
@@ -163,7 +203,9 @@ class GAE(torch.nn.Module):
                    z,
                    batch,
                    negsampling = True,
-                   nodespergraph = NODESPERGRAPH
+                   nodespergraph = NODESPERGRAPH,
+                   negfactor = 20,
+                   cdf_tol = None
                   ):
         r"""Given latent variables :obj:`z`, computes the binary cross
         entropy loss for positive edges :obj:`pos_edge_index` and negative
@@ -179,25 +221,30 @@ class GAE(torch.nn.Module):
 
         pos_edge_loss = self.edge_decoder(z,
                                           batch.edge_index,
-                                          batch.edge_attr).mean()
+                                          batch.edge_attr,
+                                          cdf_tol = cdf_tol
+                                         ).mean()
 
         if negsampling:
             # Do not include self-loops in negative samples
             pos_edge_index, _ = remove_self_loops(batch.edge_index)
             pos_edge_index, _ = add_self_loops(batch.edge_index)
             
-            lims = [torch.where(batch.batch==item)[0][[0,-1]] for item in batch.batch.unique()]
-            negsamples = torch.cat([negative_sampling(batch.edge_index[:,(batch.edge_index[0,:]>=lim[0])&(batch.edge_index[0,:]<=lim[1])], 
-                                    nodespergraph) for lim in lims],
-                           dim = 1)
+            negsamples = batched_negative_sampling(batch.edge_index, 
+                                                   batch.batch, 
+                                                   num_neg_samples=int((nodespergraph**2/negfactor
+                                                                       )
+                                                                      )
+                                                  ).cuda()
         
-            neg_edge_loss = self.edge_decoder(z, 
-                                          negsamples,
-                                          torch.full((negsamples.size(1),), 
-                                                     0.0)
-                                         ).mean()
+            neg_edge_loss = self.edge_decoder(z,
+                                              negsamples,
+                                              torch.full((negsamples.size(1),), 
+                                                         0.0).cuda(),
+                                              cdf_tol
+                                             ).mean()
         else:
-            nege_edge_los = 0.0
+            neg_edge_loss = 0.0
         
         if self.node_decoder is not None:
             x = batch.x
@@ -208,8 +255,9 @@ class GAE(torch.nn.Module):
                                   x)
         else:
             node_loss = 0.0
-
-        return pos_edge_loss + neg_edge_loss + node_loss
+        
+        edge_loss = pos_edge_loss + neg_edge_loss
+        return edge_loss, node_loss
 
     def test_edges(self,
                    z, 
@@ -228,17 +276,22 @@ class GAE(torch.nn.Module):
         pos_edge_index, _ = remove_self_loops(batch.edge_index)
         pos_edge_index, _ = add_self_loops(batch.edge_index)
         
-        neg_edge_index = negative_sampling(batch.edge_index, z.size(0))
+        neg_edge_index = negative_sampling(batch.edge_index, 
+                                           z.size(0))
         
         neg_y = z.new_zeros(neg_edge_index.size(1))
-        y = torch.cat([batch.edge_attr, neg_y], dim=0)
+        y = torch.cat([batch.edge_attr, 
+                       neg_y], 
+                      dim=0)
 
         pos_pred = self.edge_decoder.get_means(z,
                                                batch.edge_index)
         neg_pred = self.edge_decoder.get_means(z,
                                                neg_edge_index)
         
-        pred = torch.cat([pos_pred, neg_pred], dim=0)
+        pred = torch.cat([pos_pred, 
+                          neg_pred], 
+                         dim=0)
 
         y, pred = y.detach().cpu().numpy(), pred.detach().cpu().numpy()
 

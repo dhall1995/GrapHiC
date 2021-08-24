@@ -1,24 +1,19 @@
 import numpy as np
 from random import shuffle
-from sklearn.metrics import (precision_score, 
-                             recall_score,
-                             balanced_accuracy_score,
-                             roc_auc_score
-                            )
 from sklearn.utils.class_weight import compute_class_weight as ccw
 
 from GrapHiC.models.GATE_modules import GATE_promoter_module
+from GrapHiC.models.lightning_nets import LitClassifierNet
 from GrapHiC.Dataset import HiC_Dataset
 
 import torch
 from torch import Tensor
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import random_split
-from torch.optim.lr_scheduler import OneCycleLR
-from torch.optim import AdamW
 
 import torch_geometric as tgm
 from torch_geometric.data import DataLoader
+from torch_geometric.utils import degree
 
 import pytorch_lightning as pl
 from pytorch_lightning import loggers as pl_loggers
@@ -31,120 +26,8 @@ BATCHSIZE = 100
 LEARNING_RATE = 0.0001
 POS_EMBEDDING_DROPOUT = 0.01
 FULLY_CONNECTED_DROPOUT = 0.01
-CONVOLUTIONAL_DROPOUT = 0.01
+EDGE_DROPOUT = 0.1
 MANUAL_SEED = 30
-
-
-'''
-LIGHTNING NET
-'''
-class LitGATENet(pl.LightningModule):
-    def __init__(self,
-                 module,
-                 train_loader,
-                 val_loader,
-                 learning_rate,
-                 numlrsteps,
-                 criterion
-                ):
-        super().__init__()
-        self.module = module
-        self.train_loader = train_loader
-        self.val_loader = val_loader
-        self.numsteps = numlrsteps
-        self.criterion = criterion
-        self.lr = learning_rate
-
-    def train_dataloader(self):
-        return self.train_loader
-    
-    def val_dataloader(self):
-        return self.val_loader
-
-    def shared_step(self, batch):
-        pred = self.module(batch).squeeze()
-        loss = self.criterion(pred, 
-                              batch.y.long())
-        return loss, pred
-
-    def customlog(self, 
-                  name,
-                  loss,
-                  pred,
-                  actual
-                 ):
-        
-        cls = pred.argmax(dim=1)
-        # identifying number of correct predections in a given batch
-        correct=cls.eq(actual).sum().item()
-        # identifying total number of labels in a given batch
-        total=len(actual)
-        
-        cls = Tensor.cpu(cls)
-        actual = Tensor.cpu(actual)
- 
-        precision = precision_score(cls.numpy(), 
-                                    actual.numpy(),
-                                    average = 'weighted')
-        recall = recall_score(cls.numpy(), 
-                              actual.numpy(),
-                              average = 'weighted')
-        
-        adj_balanced_acc = balanced_accuracy_score(cls.numpy(),
-                                               actual.numpy(),
-                                               adjusted = True)
-        balanced_acc = balanced_accuracy_score(cls.numpy(),
-                                               actual.numpy(),
-                                               adjusted = False)
-        
-        self.log(f"{name}_raw_acc",correct/total)
-        self.log(f"{name}_adjusted_balanced_acc",adj_balanced_acc)
-        self.log(f"{name}_unadjusted_balanced_acc",balanced_acc)
-        self.log(f"{name}_weighted_average_precision",precision)
-        self.log(f"{name}_weighted_average_recall", recall)
-        self.log(f"{name}_loss",loss)
-
-        
-    def training_step(self, batch, batch_idx):
-        loss, pred = self.shared_step(batch)
-        self.customlog('train',
-                       loss,
-                       pred, 
-                       batch.y)
-        return loss
-
-    def validation_step(self, batch, batch_idx):
-        loss, pred = self.shared_step(batch)
-        self.customlog('val',
-                       loss,
-                       pred, 
-                       batch.y)
-        return loss
-
-    def test_step(self, batch, batch_idx):
-        loss, pred = self.shared_step(batch)
-        self.customlog('test',
-                       loss,
-                       pred, 
-                       batch.y)
-        return loss
-
-    def configure_optimizers(self):
-        optimizer = AdamW(self.parameters(), 
-                          lr=self.lr)
-        lr_scheduler = {'scheduler': OneCycleLR(
-                                        optimizer,
-                                        max_lr=10*self.lr,
-                                        total_steps = self.numsteps,
-                                        anneal_strategy="cos",
-                                        final_div_factor = 10,
-                                    ),
-                        'name': 'learning_rate',
-                        'interval':'step',
-                        'frequency': 1}
-
-        return [optimizer], [lr_scheduler]
-
 
 
 '''
@@ -195,7 +78,6 @@ def main(hparams):
                     d_add.y = 2.0
                 newdset.append(d_add)
     
-        weights = [1,1,1]
         dset = newdset
         shuffle(dset)
         
@@ -207,7 +89,7 @@ def main(hparams):
                                            )
 
     classes = ('up','down','nonsig')
-    criterion = CrossEntropyLoss(weight = torch.tensor(weights).float())
+    criterion = CrossEntropyLoss()
     
     print("Loaded in memory datasets")
     train_loader = DataLoader(train_dset,
@@ -236,6 +118,19 @@ def main(hparams):
     else:
         hparams.recurrent = False
         
+    if hparams.principal_neighbourhood_aggregation == 1:
+        hparams.principal_neighbourhood_aggregation = True
+        # Compute in-degree histogram over training data.
+        deg = torch.zeros(NUMNODESPERGRAPH+1, dtype=torch.long)
+        for data in train_dset:
+            d = degree(data.edge_index[1], 
+                       num_nodes=data.num_nodes, 
+                       dtype=torch.long)
+            deg += torch.bincount(d, minlength=deg.numel())
+    else:
+        hparams.principal_neighbourhood_aggregation = False
+        deg = None
+        
     module = GATE_promoter_module(hidden_channels = hparams.hiddenchannels,
                                   inchannels = NUMCHIP,
                                   edgechannels = NUMEDGE,
@@ -246,15 +141,19 @@ def main(hparams):
                                   positional_encoding = hparams.positional_encoding,
                                   pos_embedding_dropout = hparams.pdropout,
                                   fc_dropout = hparams.fdropout,
-                                  conv_dropout = hparams.cdropout,
+                                  edge_dropout = hparams.edropout,
                                   recurrent = hparams.recurrent,
-                                  numnodespergraph = NUMNODESPERGRAPH)
-    Net = LitGATENet(module,
+                                  numnodespergraph = NUMNODESPERGRAPH,
+                                  principal_neighbourhood_aggregation = hparams.principal_neighbourhood_aggregation,
+                                  deg = deg,
+                                  aggr = hparams.aggregation,
+                                  heads = hparams.heads
+                                 )
+    Net = LitClassifierNet(module,
                      train_loader,
                      val_loader,
-                     hparams.learning_rate,
-                     hparams.numsteps,
-                     criterion = criterion
+                     criterion = criterion,
+                     inputhparams = hparams
                     )
 
     tb_logger = pl_loggers.TensorBoardLogger(hparams.logdir,
@@ -326,6 +225,10 @@ if __name__ == '__main__':
                         '--hiddenchannels',
                         type = int,
                         default=10)
+    parser.add_argument('-heads',
+                        '--heads',
+                        type = int,
+                        default=4)
     parser.add_argument('-em',
                         '--embeddinglayers',
                         type = int,
@@ -359,9 +262,9 @@ if __name__ == '__main__':
     parser.add_argument('--fdropout',
                         type = float,
                         default=FULLY_CONNECTED_DROPOUT)
-    parser.add_argument('--cdropout',
+    parser.add_argument('--edropout',
                         type = float,
-                        default =CONVOLUTIONAL_DROPOUT)
+                        default =EDGE_DROPOUT)
     parser.add_argument('-c',
                         '--checkpoint',
                         default=None)
@@ -377,6 +280,10 @@ if __name__ == '__main__':
                         '--positional_encoding',
                         type = bool,
                         default=True)
+    parser.add_argument('-pna',
+                        '--principal_neighbourhood_aggregation',
+                        type = int,
+                        default=0)
     parser.add_argument('-m',
                         '--manual_seed',
                         type = int,
@@ -417,6 +324,10 @@ if __name__ == '__main__':
                         '--recurrent',
                         type = int,
                         default = 1)
+    parser.add_argument('-a',
+                        '--aggregation',
+                        type = str,
+                        default = 'add')
     args = parser.parse_args()
 
     main(args)
