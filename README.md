@@ -68,7 +68,7 @@ add_binned_data_to_graphlist(x['chr2'],
     conda create --name graphic python=3.7
     conda activate graphic
     ```
-2. Install [PyTorch](https://pytorch.org), [DGL](https://docs.dgl.ai/en/0.4.x/index.html) and [DGL LifeSci](https://lifesci.dgl.ai/install/index.html):
+2. Install [PyTorch](https://pytorch.org):
     
     N.B. Make sure to install appropriate version for your CUDA version
 
@@ -81,12 +81,6 @@ add_binned_data_to_graphlist(x['chr2'],
     $ conda install pytorch torchvision cudatoolkit=9.2 -c pytorch      # For CUDA 9.2 Build
     $ conda install pytorch torchvision cudatoolkit=10.1 -c pytorch     # For CUDA 10.1 Build
     $ conda install pytorch torchvision cudatoolkit=10.2 -c pytorch     # For CUDA 10.2 Build
-   
-    # Install DGL. N.B. We require 0.4.3 until compatibility with DGL 0.5.0+ is implemented
-    $ pip install dgl==0.4.3
-    
-    # Install DGL LifeSci
-    $ conda install -c dglteam dgllife
     ```
 
 
