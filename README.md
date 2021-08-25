@@ -1,6 +1,6 @@
 # GrapHiC (Graph-based Hi-C)
 [![Project Status: Active – The project has reached a stable, usable state and is being actively developed.](https://www.repostatus.org/badges/latest/active.svg)](https://www.repostatus.org/#active)
-
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 ![banner](https://github.com/dhall1995/GrapHiC-ML/blob/master/workflow.png)
 This package provides functionality for producing bespoke graph datasets using multi-omics data and Hi-C. We provide compatibility with the standard [bigwig](https://genome.ucsc.edu/goldenpath/help/bigWig.html) and [bed](https://genome.ucsc.edu/FAQ/FAQformat.html#format1) UCSC data formats and integrate with the popular [Cooler](https://cooler.readthedocs.io/en/latest/) format for Hi-C data.
 
