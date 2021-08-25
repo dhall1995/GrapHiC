@@ -114,5 +114,10 @@ add_binned_data_to_graphlist(x['chr2'],
    ```bash
    pip install -e .
   ```
-  
+6. Optionally, to run the tutorial notebooks, run the following from within the conda environment:
+  ```bash
+   conda install -c anaconda ipykernel
+   python -m ipykernel install --user --name=graphic
+```  
+Then when starting a jupyter notebook choose the graphic kernel
 For enquiries please email: dh486@cam.ac.uk
