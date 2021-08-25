@@ -37,7 +37,7 @@ setup(
     author="Dominic Hall & Arian Jamasb",
     author_email="dh486@cam.ac.uk",
     url="https://github.com/dhall1995/GrapHiC-ML",
-    packages=find_packages()+['dtrack_utils'],
+    packages=find_packages(),
     package_data={
         "": ["LICENSE.txt", "README.md", "requirements.txt", "*.csv"]
     },

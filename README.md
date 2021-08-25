@@ -100,25 +100,19 @@ add_binned_data_to_graphlist(x['chr2'],
    Where `${CUDA}` and `${TORCH}` should be replaced by your specific CUDA version (`cpu`, `cu92`, `cu101`, `cu102`) and PyTorch version (`1.4.0`, `1.5.0`, `1.6.0`), respectively 
    
    N.B. Follow the [instructions in the Torch-Geometric Docs](https://pytorch-geometric.readthedocs.io/en/latest/notes/installation.html) to install the versions appropriate to your CUDA version.
-   
-4. Install [Cooler](https://cooler.readthedocs.io/en/latest/),[Networkx](https://networkx.org/documentation/stable/install.html),[Cython](https://cython.org/),[pyBigWig](https://github.com/deeptools/pyBigWig),[Pandas](https://pandas.pydata.org/docs/getting_started/index.html),[NumPy](https://numpy.org/install/),[Scikit-learn](https://scikit-learn.org/stable/)
-   ```bash
-   pip install cooler
-   pip install networkx[default]
-   pip install Cython
-   pip install pyBigWig
-   pip install pandas
-   pip install numpy
-   pip install -U scikit-learn
+
+4. install cython
    ```
-5. Clone the git repo
+   pip install Cython
+```   
+4. Clone the git repo
    ```bash
    git clone https://github.com/dhall1995/GrapHiC-ML
    ```
 
-6. run the cython setup
+5. install
    ```bash
-   python cython_setup.py build_ext --inplace
-   ```
+   pip install -e .
+  ```
   
 For enquiries please email: dh486@cam.ac.uk
