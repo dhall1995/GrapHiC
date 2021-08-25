@@ -121,4 +121,7 @@ add_binned_data_to_graphlist(x['chr2'],
    python -m ipykernel install --user --name=graphic
   ```  
 Then when starting a jupyter notebook choose the graphic kernel
+
+<hr>
+
 For enquiries please email: dh486@cam.ac.uk
