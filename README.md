@@ -104,20 +104,21 @@ add_binned_data_to_graphlist(x['chr2'],
 4. install cython
    ```
    pip install Cython
-```   
-4. Clone the git repo
+    ```   
+5. Clone the git repo
+
    ```bash
    git clone https://github.com/dhall1995/GrapHiC-ML
    ```
 
-5. install
+6. install
    ```bash
    pip install -e .
-  ```
-6. Optionally, to run the tutorial notebooks, run the following from within the conda environment:
+   ```
+7. Optionally, to run the tutorial notebooks, run the following from within the conda environment:
   ```bash
    conda install -c anaconda ipykernel
    python -m ipykernel install --user --name=graphic
-```  
+  ```  
 Then when starting a jupyter notebook choose the graphic kernel
 For enquiries please email: dh486@cam.ac.uk
