@@ -7,7 +7,7 @@ import os
 from .utils.Datatrack import DataTrack_bigwig as dtbw
 from .utils.Datatrack import DataTrack_rvp as dtrvp
 
-from typing import List, Dict
+from typing import List, Dict, Tuple
 
 CHROMS = ['chr{}'.format(idx+1) for idx in np.arange(19)]+['chrX']
 
@@ -40,14 +40,14 @@ def cooler_bin_info(cooler_path: str,
     return chrom_binregs, chrom_stats, binsize
     
 def evaluate_tracks_over_cooler_bins(cooler_path:str,
-                                     paths:List = [],
-                                     names:List = [],
-                                     stats_types:List[str] = ['max'],
-                                     allowed_chroms:List = CHROMS,
-                                     value_col:int = 3,
-                                     region_cols:tuple[int] = (1,2),
-                                     chrom_col[int] = 0,
-                                     verbose[bool] = True
+                                     paths: List = [],
+                                     names: List = [],
+                                     stats_types: List[str] = ['max'],
+                                     allowed_chroms: List = CHROMS,
+                                     value_col: int = 3,
+                                     region_cols: Tuple[int] = (1,2),
+                                     chrom_col: int = 0,
+                                     verbose: bool = True
                                     )->pd.DataFrame:
     """
     Evaluate multiple tracks over all bins within a cooler object and return the results in a Pandas dataframe
@@ -259,7 +259,7 @@ def evaluate_tracks_over_bed_dataframe(df: pd.DataFrame,
                                        value_col: int = 3,
                                        region_cols: tuple = (1,2),
                                        chrom_col: int = 0,
-                                       verbose = True):
+                                       verbose: bool = True):
     """
     Evaluate multiple BED or bigwig style tracks over an arbitrary BED style dataframe in which the 0th column details the chromosome and the 1nd and 2nd column detail the regions. Contrary to evaluate_tracks_over_cooler_bins, this instead returns both new column names and a value array which can then be appended to the original BED-style dataframe for for ease of access later.
     :param df: BED style DataFrame
@@ -324,11 +324,11 @@ def evaluate_tracks_over_bed_dataframe(df: pd.DataFrame,
     return colnames, arr
 
 
-def evaluate_bigwigs_over_bed_dataframe(df,
-                                        bwpaths = [],
-                                        names = [],
-                                        stats_types = ['max'],
-                                        verbose = True):
+def evaluate_bigwigs_over_bed_dataframe(df: pd.DataFrame,
+                                        bwpaths: List = [],
+                                        names: List = [],
+                                        stats_types: List[str] = ['max'],
+                                        verbose: bool = True):
     """
     Evaluate multiple bigwig style tracks over an arbitrary BED style dataframe in which the 0th column details the chromosome and the 1nd and 2nd column detail the regions. Contrary to evaluate_tracks_over_cooler_bins, this instead returns both new column names and a value array which can then be appended to the original BED-style dataframe for for ease of access later.
     :param df: BED style DataFrame

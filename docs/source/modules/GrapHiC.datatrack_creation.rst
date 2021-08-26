@@ -2,7 +2,7 @@ GrapHiC.datatrack_creation
 =========================
 
 Core Functions:
---------------
+---------------
 .. autofunction:: GrapHiC.Datatrack_creation.evaluate_tracks_over_cooler_bins
 
 .. autofunction:: GrapHiC.Datatrack_creation.evaluate_tracks_over_bed_dataframe
