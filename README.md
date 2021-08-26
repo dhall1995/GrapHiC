@@ -108,7 +108,7 @@ add_binned_data_to_graphlist(x['chr2'],
 5. Clone the git repo
 
    ```bash
-   git clone https://github.com/dhall1995/GrapHiC-ML
+   git clone https://github.com/dhall1995/GrapHiC
    ```
 
 6. install

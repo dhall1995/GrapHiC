@@ -43,7 +43,7 @@ Installing Pytorch Geometric
 Install all needed packages with ${CUDA} replaced by either cpu, cu92, cu100 or cu101 depending on your PyTorch installation. 
 
 .. note::
-    Follow the 'instructions in the Torch-Geometric Docs <https://pytorch-geometric.readthedocs.io/en/latest/notes/installation.html>'_ to install the versions appropriate to your CUDA version.
+    Follow the instructions in the Torch-Geometric Docs (https://pytorch-geometric.readthedocs.io/en/latest/notes/installation.html) to install the versions appropriate to your CUDA version.
 
 Install Cython
 ------------------------
@@ -57,14 +57,10 @@ Clone the git repo
 
 .. code-block:: bash
 
-    git clone https://github.com/dhall1995/GrapHiC-ML
-
-Install
--------
-From within the GrapHiC-ML directory:
-.. code-block:: bash
-
+    git clone https://github.com/dhall1995/GrapHiC
+    cd GrapHiC
     pip install -e .
+
 
 Setup Notebook graphic kernel (optional)
 ----------------------------------------
