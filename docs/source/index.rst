@@ -21,13 +21,12 @@ This package provides
    getting_started/introduction
    license
 
-
-.. toctree::
+.. .. toctree::
    :glob:
    :maxdepth: 2
    :caption: Package Reference:
 
-   modules/GrapHiC.graph_creation
+.. modules/GrapHiC.graph_creation
    modules/GrapHiC.datatrack_creation
    modules/GrapHiC.utils.dtrack_utils
    modules/GrapHiC.utils.Datatrack

@@ -9,6 +9,8 @@ conda:
    environment: environment.yml
 # Build documentation in the docs/ directory with Sphinx
 sphinx:
+   builder: html
+   fail_on_warning: True
    configuration: docs/source/conf.py
 
 # Optionally build your docs in additional formats such as PDF
