@@ -10,8 +10,8 @@ This package provides functionality for producing bespoke graph datasets using m
 from GrapHiC.Graph_creation import from_regions
 
 # Specify cooler paths
-coolerpath ={'WT':'/disk2/dh486/cooler_files/WT/manually_downsampled/KR/KR_downsampled_WT_merged_10000.cool',
-             'KO':'/disk2/dh486/cooler_files/KO/KR/KR_KO_merged_10000.cool'
+coolerpath ={'WT':'tutorial_data/WT_contacts.cool',
+             'KO':'tutorial_data/KO_contacts.cool'
             }
 
 x = from_regions([coolerpath['WT'],coolerpath['KO']],         #paths to cooler files for edge featurisation
@@ -40,7 +40,7 @@ x = from_regions([coolerpath['WT'],coolerpath['KO']],         #paths to cooler f
 from GrapHiC.Datatrack_creation import evaluate_tracks_over_cooler_bins
 
 #specify paths
-contact_path = '/disk2/dh486/cooler_files/WT/manually_downsampled/KR/KR_downsampled_WT_merged_10000.cool'
+contact_path = 'tutorial_data/WT_contacts.cool'
 bed_peaks = "tutorial_data/GSEXXXXXHendrich20161026_Nanog_ESC_peaks.bed"
 bigwig = "tutorial_data/GSE71932_Nanog_mESCs_treat_pileup_filter.bw"
 
