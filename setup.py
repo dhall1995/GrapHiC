@@ -34,7 +34,7 @@ setup(
     name="GrapHiC",
     version="0.0.1",
     description="A tool to generate bespoke Graph datasets from HiC and ChIPseq",
-    author="Dominic Hall & Arian Jamasb",
+    author="Dominic Hall",
     author_email="dh486@cam.ac.uk",
     url="https://github.com/dhall1995/GrapHiC-ML",
     packages=find_packages(),
