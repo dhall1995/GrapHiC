@@ -10,7 +10,7 @@ This package provides
     * functionality for integrating 1D epigenetic datatracks with Hi-C graph representations
 
 .. note::
-   This is an early-stage project and a lot more documentation and functionality is planned to be included. If you are a structural biologist or machine learning researcher in computational biology, my inbox is always open for suggestions and assistance!
+   This is an early-stage project and a lot more documentation and functionality is planned to be included. If you are a structural biologist or machine learning researcher in computational biology, my inbox is always open (dh486@cam.ac.uk)
 
 .. toctree::
    :glob:
