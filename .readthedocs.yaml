@@ -6,7 +6,7 @@
 version: 2
 
 conda: 
-   environment: environment.yml
+   environment: rtd_environment.yml
 # Build documentation in the docs/ directory with Sphinx
 sphinx:
    builder: html
@@ -21,6 +21,6 @@ formats:
 python:
    version: "3.7"
    install:
-   - requirements: requirements.txt
+   - requirements: rtd_requirements.txt
    - method: setuptools
      path: .
