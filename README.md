@@ -122,6 +122,8 @@ add_binned_data_to_graphlist(x['chr2'],
   ```  
 Then when starting a jupyter notebook choose the graphic kernel
 
+[Documentation (work in progress)](https://graphic-ml.readthedocs.io/en/latest/)
+
 <hr>
 
 For enquiries please email: dh486@cam.ac.uk

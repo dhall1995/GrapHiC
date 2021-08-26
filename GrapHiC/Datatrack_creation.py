@@ -7,11 +7,22 @@ import os
 from .utils.Datatrack import DataTrack_bigwig as dtbw
 from .utils.Datatrack import DataTrack_rvp as dtrvp
 
+from typing import List, Dict
+
 CHROMS = ['chr{}'.format(idx+1) for idx in np.arange(19)]+['chrX']
 
-def cooler_bin_info(cooler_path,
-                    allowed_chroms = CHROMS
-                   ):
+def cooler_bin_info(cooler_path: str,
+                    allowed_chroms:List = CHROMS
+                   )->(Dict, Dict, int):
+    """
+    Retrieve bin-level information from a cooler object
+    :param cooler_path: path to cooler file
+    :type cooler_path: str
+    :param allowed_chroms: List of chromosomes to retrieve from the cooler file
+    :type allowed_chroms: List
+    :return: Tuple containing a Dictionary, chrom_binregs, of regions associated with each bin; a Dictionary, chrom_stats, of cooler indices associated with each bin; an binsize
+    :rtype: tuple
+    """
     c = cooler.Cooler(cooler_path)
     bins = c.bins()
     binsize = int(c.binsize)
@@ -28,16 +39,39 @@ def cooler_bin_info(cooler_path,
     
     return chrom_binregs, chrom_stats, binsize
     
-def evaluate_tracks_over_cooler_bins(cooler_path,
-                                     paths = [],
-                                     names = [],
-                                     stats_types = ['max'],
-                                     allowed_chroms = CHROMS,
-                                     value_col = 3,
-                                     region_cols = (1,2),
-                                     chrom_col = 0,
-                                     verbose = True
-                                    ):
+def evaluate_tracks_over_cooler_bins(cooler_path:str,
+                                     paths:List = [],
+                                     names:List = [],
+                                     stats_types:List[str] = ['max'],
+                                     allowed_chroms:List = CHROMS,
+                                     value_col:int = 3,
+                                     region_cols:tuple[int] = (1,2),
+                                     chrom_col[int] = 0,
+                                     verbose[bool] = True
+                                    )->pd.DataFrame:
+    """
+    Evaluate multiple tracks over all bins within a cooler object and return the results in a Pandas dataframe
+    :param cooler_path: path to cooler file
+    :type cooler_path: str
+    :param paths: List of paths to (multiple) bigwig or BED files 
+    :type paths: List
+    :param names: List of names to associated with each datatrack provided with path. If the length of the names list doesn't equal the length of the paths list then the function instead assigns names based on filenames 
+    :type names: List
+    :param stats_types: List of statistics to collect over each bin. Allowed statistics are: mean, max, min, sum, coverage, std 
+    :type stats_types: List[str]
+    :param allowed_chroms: List of chromosomes to retrieve from the cooler file
+    :type allowed_chroms: List
+    :param value_col: Which collumn to collect values from in provided BED files (default = 3) (Note: zero-indexing is assumed)
+    :type value_col: int
+    :param region_cols: Tuple detailing which columns (zero-indexed) to collect the region information from in provided BED files (default = (1,2))
+    :type region_cols: tuple
+    :param chrom_col: Which collumn to collect chromosome information from in provided BED files (default = 0) (Note: zero-indexing is assumed)
+    :type chrom_col: int
+    :param verbose: Whether to print progress/names etc. 
+    :type verbose: bool
+    :return: Dataframe detailing evaluated tracks/statistics over cooler bins
+    :rtype: pd.DataFrame
+    """
     if len(names)!= len(paths):
         names = [os.path.split(path)[1].split(".")[0] for path in paths]
     
@@ -83,13 +117,30 @@ def evaluate_tracks_over_cooler_bins(cooler_path,
                         index = chrom_stats[:,0], 
                         columns = colnames)
 
-def evaluate_bigwigs_over_cooler_bins(cooler_path,
-                                     bwpaths = [],
-                                     names = [],
-                                     stats_types = ['max'],
-                                     allowed_chroms = CHROMS,
-                                     verbose = True
-                                    ):
+def evaluate_bigwigs_over_cooler_bins(cooler_path: str,
+                                     bwpaths: List[str] = [],
+                                     names: List[str] = [],
+                                     stats_types: List[str] = ['max'],
+                                     allowed_chroms: List = CHROMS,
+                                     verbose: bool = True
+                                    )->pd.DataFrame:
+    """
+    Evaluate multiple bigwigs over all bins within a cooler object and return the results in a Pandas dataframe
+    :param cooler_path: path to cooler file
+    :type cooler_path: str
+    :param bwpaths: List of paths to (multiple) bigwig files 
+    :type bwpaths: List[str]
+    :param names: List of names to associated with each datatrack provided with path. If the length of the names list doesn't equal the length of the paths list then the function instead assigns names based on filenames 
+    :type names: List[str]
+    :param stats_types: List of statistics to collect over each bin. Allowed statistics are: mean, max, min, sum, coverage, std 
+    :type stats_types: List[str]
+    :param allowed_chroms: List of chromosomes to retrieve from the cooler file
+    :type allowed_chroms: List
+    :param verbose: Whether to print progress/names etc. 
+    :type verbose: bool
+    :return: Dataframe detailing evaluated tracks/statistics over cooler bins
+    :rtype: pd.DataFrame
+    """
     if len(names)!= len(bwpaths):
         names = [os.path.split(bigwig)[1].split(".")[0] for bigwig in bwpaths]
         
@@ -128,15 +179,39 @@ def evaluate_bigwigs_over_cooler_bins(cooler_path,
                         index = chrom_stats[:,0], 
                         columns = colnames)
 
-def evaluate_dtrvp_over_cooler_bins(cooler_path,
-                                    bedpaths = [],
-                                    chrom_cols = [],
-                                    region_cols = [],
-                                    value_cols = [],
-                                    stats_types = ['max'],
-                                    allowed_chroms = CHROMS,
-                                    verbose = True
-                                    ):
+def evaluate_dtrvp_over_cooler_bins(cooler_path: str,
+                                    bedpaths: List[str] = [],
+                                    names: List[str] = [],
+                                    stats_types: List[str] = ['max'],
+                                    value_cols: List = [],
+                                    region_cols: List = [],
+                                    chrom_cols: List = [],
+                                    allowed_chroms: List = CHROMS,
+                                    verbose: bool = True
+                                    )-> pd.DataFrame:
+    """
+    Evaluate multiple BED (dtrvp = datatrack region-value-pairs) style tracks over all bins within a cooler object and return the results in a Pandas dataframe
+    :param cooler_path: path to cooler file
+    :type cooler_path: str
+    :param bedpaths: List of paths to (multiple) BED files 
+    :type bedpaths: List
+    :param names: List of names to associated with each datatrack provided with path. If the length of the names list doesn't equal the length of the paths list then the function instead assigns names based on filenames 
+    :type names: List
+    :param stats_types: List of statistics to collect over each bin. Allowed statistics are: mean, max, min, sum, coverage, std 
+    :type stats_types: List[str]
+    :param value_cols: List detailing which collumns to collect values from in provided BED files (Note: zero-indexing is assumed and different value columns can be specified per BED file unlike evaluate_tracks_over_cooler_bins)
+    :type value_cols: int
+    :param region_cols: List of tuples detailing which columns (zero-indexed) to collect the region information from in provided BED files. Different region columns can be specified per BED file unlike evaluate_tracks_over_cooler_bins.
+    :type region_cols: tuple
+    :param chrom_cols: List detailing which collumn to collect chromosome information from in provided BED files (Note: zero-indexing is assumed and different chromosome columns can be specified per BED file unlike evaluate_tracks_over_cooler_bins)
+    :type chrom_cols: int
+    :param allowed_chroms: List of chromosomes to retrieve from the cooler file
+    :type allowed_chroms: List
+    :param verbose: Whether to print progress/names etc. 
+    :type verbose: bool
+    :return: Dataframe detailing evaluated tracks/statistics over cooler bins
+    :rtype: pd.DataFrame
+    """
     if len(names)!= len(bedpaths):
         names = [os.path.split(bed)[1].split(".")[0] for bed in bedpaths]
         
@@ -177,14 +252,35 @@ def evaluate_dtrvp_over_cooler_bins(cooler_path,
                         index = chrom_stats[:,0], 
                         columns = names)
 
-def evaluate_tracks_over_bed_dataframe(df,
-                                       paths = [],
-                                       names = [],
-                                       stats_types = ['max'],
-                                       value_col = 3,
-                                       region_cols = (1,2),
-                                       chrom_col = 0,
+def evaluate_tracks_over_bed_dataframe(df: pd.DataFrame,
+                                       paths: List[str] = [],
+                                       names: List[str] = [],
+                                       stats_types: List[str] = ['max'],
+                                       value_col: int = 3,
+                                       region_cols: tuple = (1,2),
+                                       chrom_col: int = 0,
                                        verbose = True):
+    """
+    Evaluate multiple BED or bigwig style tracks over an arbitrary BED style dataframe in which the 0th column details the chromosome and the 1nd and 2nd column detail the regions. Contrary to evaluate_tracks_over_cooler_bins, this instead returns both new column names and a value array which can then be appended to the original BED-style dataframe for for ease of access later.
+    :param df: BED style DataFrame
+    :type df: pd.DataFrame
+    :param paths: List of paths to (multiple) bigwig or BED files 
+    :type paths: List
+    :param names: List of names to associated with each datatrack provided with path. If the length of the names list doesn't equal the length of the paths list then the function instead assigns names based on filenames 
+    :type names: List
+    :param stats_types: List of statistics to collect over each bin. Allowed statistics are: mean, max, min, sum, coverage, std 
+    :type stats_types: List[str]
+    :param value_col: Which collumn to collect values from in provided BED files (default = 3) (Note: zero-indexing is assumed)
+    :type value_col: int
+    :param region_cols: Tuple detailing which columns (zero-indexed) to collect the region information from in provided BED files (default = (1,2))
+    :type region_cols: tuple
+    :param chrom_col: Which collumn to collect chromosome information from in provided BED files (default = 0) (Note: zero-indexing is assumed)
+    :type chrom_col: int
+    :param verbose: Whether to print progress/names etc. 
+    :type verbose: bool
+    :return: list of column names of length len(paths) and a value array of shape (df.shape[0],len(paths))
+    :rtype: list, array
+    """
     
     if len(names)!= len(paths):
         names = [os.path.split(path)[1].split(".")[0] for path in paths]
@@ -226,11 +322,28 @@ def evaluate_tracks_over_bed_dataframe(df,
                          axis = 1)
     
     return colnames, arr
+
+
 def evaluate_bigwigs_over_bed_dataframe(df,
                                         bwpaths = [],
                                         names = [],
                                         stats_types = ['max'],
                                         verbose = True):
+    """
+    Evaluate multiple bigwig style tracks over an arbitrary BED style dataframe in which the 0th column details the chromosome and the 1nd and 2nd column detail the regions. Contrary to evaluate_tracks_over_cooler_bins, this instead returns both new column names and a value array which can then be appended to the original BED-style dataframe for for ease of access later.
+    :param df: BED style DataFrame
+    :type df: pd.DataFrame
+    :param bwpaths: List of paths to (multiple) bigwig files 
+    :type bwpaths: List
+    :param names: List of names to associated with each datatrack provided with path. If the length of the names list doesn't equal the length of the paths list then the function instead assigns names based on filenames 
+    :type names: List
+    :param stats_types: List of statistics to collect over each bin. Allowed statistics are: mean, max, min, sum, coverage, std 
+    :type stats_types: List[str]
+    :param verbose: Whether to print progress/names etc. 
+    :type verbose: bool
+    :return: list of column names of length len(paths) and a value array of shape (df.shape[0],len(paths))
+    :rtype: list, array
+    """
     
     if len(names)!= len(bwpaths):
         names = bwpaths
