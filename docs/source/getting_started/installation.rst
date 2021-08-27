@@ -45,12 +45,13 @@ Install all needed packages with ${CUDA} replaced by either cpu, cu92, cu100 or 
 .. note::
     Follow the instructions in the Torch-Geometric Docs (https://pytorch-geometric.readthedocs.io/en/latest/notes/installation.html) to install the versions appropriate to your CUDA version.
 
-Install Cython
+Install Cython & git-lfs
 ------------------------
 
 .. code-block:: bash
 
-     pip install Cython
+     $pip install Cython
+     $conda install git-lfs
 
 Clone the git repo
 ------------------
@@ -66,6 +67,7 @@ Setup Notebook graphic kernel (optional)
 ----------------------------------------
 Optionally, to run the tutorial notebooks, run the following from within the conda environment:
 .. code-block:: bash
+
     conda install -c anaconda ipykernel
     python -m ipykernel install --user --name=graphic
     
