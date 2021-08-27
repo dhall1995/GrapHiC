@@ -1,6 +1,6 @@
 """Functions for creating Chromatin Structure Graphs from HiC Data"""
 import logging
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Tuple
 
 import cooler
 import networkx as nx
@@ -660,8 +660,8 @@ def from_regions(
     record_backbone_interactions: Optional[bool] = False,
     record_node_chromosome_as_onehot: Optional[bool] = False,
     add_self_loops: Optional[bool] = True,
-    record_names = True,
-    same_index = True,
+    record_names: Optional[bool] = True,
+    same_index: Optional[bool] = True,
     chromosomes: Optional[list] = ["chr{}".format(str(i+1)) for i in np.arange(19)] + ['chrX']
 ) -> list:
     """
