@@ -104,18 +104,20 @@ add_binned_data_to_graphlist(x['chr2'],
 4. install cython
    ```
    pip install Cython
-    ```   
-5. Clone the git repo
+    ```
+
+5. Install git-lfs
+   ```bash
+   conda install git-lfs
+   ```   
+6. Clone the git repo and install
 
    ```bash
    git clone https://github.com/dhall1995/GrapHiC
-   ```
-
-6. install
-   ```bash
+   cd GrapHiC
    pip install -e .
    ```
-7. Optionally, to run the tutorial notebooks, run the following from within the conda environment:
+6. Optionally, to run the tutorial notebooks, run the following from within the conda environment:
   ```bash
    conda install -c anaconda ipykernel
    python -m ipykernel install --user --name=graphic
