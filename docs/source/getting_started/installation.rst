@@ -66,6 +66,7 @@ Clone the git repo
 Setup Notebook graphic kernel (optional)
 ----------------------------------------
 Optionally, to run the tutorial notebooks, run the following from within the conda environment:
+
 .. code-block:: bash
 
     conda install -c anaconda ipykernel
