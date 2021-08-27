@@ -231,7 +231,7 @@ def add_vector_edge_weighted_self_loops(
     edge_attr: np.ndarray,
     nodes: np.ndarray,
     fill_value: Optional[int] = 1
-)-> Tuple(np.ndarray):
+)-> Tuple[np.ndarray]:
     '''
     Given some edge index and edge data, adds in self-loops to all nodes which aren't already self-looped. For the added self loops, if any exist then all further self-loop features are the mean of the existing self-loop features. In the case that no self loops exist, users must specify a fill value. Added self loops are then given features of the same shape as other edge features but with the given fill value.
     
@@ -663,7 +663,7 @@ def from_regions(
     record_names: Optional[bool] = True,
     same_index: Optional[bool] = True,
     chromosomes: Optional[list] = ["chr{}".format(str(i+1)) for i in np.arange(19)] + ['chrX']
-) -> List:
+) -> Dict:
     """
     Computes a HiC Graph from a list of cooler files
     
@@ -820,7 +820,7 @@ def from_sites(
     record_names: Optional[bool] = True,
     same_index: Optional[bool] = True,
     chromosomes: Optional[list] = ["chr{}".format(str(i+1)) for i in np.arange(19)] + ['chrX']
-) -> List:
+) -> Tuple:
     """
     Computes a HiC Graph from a list of cooler files and some disjoint sites
     
