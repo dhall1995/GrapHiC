@@ -13,16 +13,17 @@ CHROMS = ['chr{}'.format(idx+1) for idx in np.arange(19)]+['chrX']
 
 def cooler_bin_info(cooler_path: str,
                     allowed_chroms:List = CHROMS
-                   )->(Dict, Dict, int):
+                   )->Tuple:
     """
-    Retrieve bin-level information from a cooler object
-    :param cooler_path: path to cooler file
-    :type cooler_path: str
-    :param allowed_chroms: List of chromosomes to retrieve from the cooler file
-    :type allowed_chroms: List
-    :return: Tuple containing a Dictionary, chrom_binregs, of regions associated with each bin; a Dictionary, chrom_stats, of cooler indices associated with each bin; an binsize
-    :rtype: tuple
-    """
+	Retrieve bin-level information from a cooler object
+
+	:param cooler_path: path to cooler file
+	:type cooler_path: str
+	:param allowed_chroms: List of chromosomes to retrieve from the cooler file
+	:type allowed_chroms: List
+	:return: Tuple containing a Dictionary, chrom_binregs, of regions associated with each bin; a Dictionary, chrom_stats, of cooler indices associated with each bin; an binsize
+	:rtype: tuple
+        """
     c = cooler.Cooler(cooler_path)
     bins = c.bins()
     binsize = int(c.binsize)
@@ -51,6 +52,7 @@ def evaluate_tracks_over_cooler_bins(cooler_path:str,
                                     )->pd.DataFrame:
     """
     Evaluate multiple tracks over all bins within a cooler object and return the results in a Pandas dataframe
+    
     :param cooler_path: path to cooler file
     :type cooler_path: str
     :param paths: List of paths to (multiple) bigwig or BED files 
@@ -126,6 +128,7 @@ def evaluate_bigwigs_over_cooler_bins(cooler_path: str,
                                     )->pd.DataFrame:
     """
     Evaluate multiple bigwigs over all bins within a cooler object and return the results in a Pandas dataframe
+    
     :param cooler_path: path to cooler file
     :type cooler_path: str
     :param bwpaths: List of paths to (multiple) bigwig files 
@@ -191,6 +194,7 @@ def evaluate_dtrvp_over_cooler_bins(cooler_path: str,
                                     )-> pd.DataFrame:
     """
     Evaluate multiple BED (dtrvp = datatrack region-value-pairs) style tracks over all bins within a cooler object and return the results in a Pandas dataframe
+    
     :param cooler_path: path to cooler file
     :type cooler_path: str
     :param bedpaths: List of paths to (multiple) BED files 
@@ -262,6 +266,7 @@ def evaluate_tracks_over_bed_dataframe(df: pd.DataFrame,
                                        verbose: bool = True):
     """
     Evaluate multiple BED or bigwig style tracks over an arbitrary BED style dataframe in which the 0th column details the chromosome and the 1nd and 2nd column detail the regions. Contrary to evaluate_tracks_over_cooler_bins, this instead returns both new column names and a value array which can then be appended to the original BED-style dataframe for for ease of access later.
+    
     :param df: BED style DataFrame
     :type df: pd.DataFrame
     :param paths: List of paths to (multiple) bigwig or BED files 
@@ -331,6 +336,7 @@ def evaluate_bigwigs_over_bed_dataframe(df: pd.DataFrame,
                                         verbose: bool = True):
     """
     Evaluate multiple bigwig style tracks over an arbitrary BED style dataframe in which the 0th column details the chromosome and the 1nd and 2nd column detail the regions. Contrary to evaluate_tracks_over_cooler_bins, this instead returns both new column names and a value array which can then be appended to the original BED-style dataframe for for ease of access later.
+    
     :param df: BED style DataFrame
     :type df: pd.DataFrame
     :param bwpaths: List of paths to (multiple) bigwig files 
