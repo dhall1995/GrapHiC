@@ -160,7 +160,7 @@ runs
 *.swp
 *.swx
 testing.ipynb
-testing*
+*testing*
 build/*
 *.so
 Train_classifier_notebook.ipynb
