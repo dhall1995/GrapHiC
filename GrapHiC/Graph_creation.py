@@ -663,7 +663,7 @@ def from_regions(
     record_names: Optional[bool] = True,
     same_index: Optional[bool] = True,
     chromosomes: Optional[list] = ["chr{}".format(str(i+1)) for i in np.arange(19)] + ['chrX']
-) -> list:
+) -> List:
     """
     Computes a HiC Graph from a list of cooler files
     
@@ -820,7 +820,7 @@ def from_sites(
     record_names: Optional[bool] = True,
     same_index: Optional[bool] = True,
     chromosomes: Optional[list] = ["chr{}".format(str(i+1)) for i in np.arange(19)] + ['chrX']
-) -> list:
+) -> List:
     """
     Computes a HiC Graph from a list of cooler files and some disjoint sites
     
