@@ -35,6 +35,7 @@ def nx_graph_from_regions(
 ) -> nx.Graph:
     """
     Computes a HiC Graph from a cooler file
+    
     :param contacts: cooler file generated from a Hi-C experiment.
     :param regions: Dictionary specifying chromosomes and regions to collect data over. Dictionary should contain chromosomes as keys and 2D integer numpy arrays as values.
     :params balance: Optional boolean to determine whether returned weights should be balanced or not.
@@ -182,7 +183,16 @@ def nx_graph_from_regions(
 def make_edges_bidirectional(
     edge_index: np.ndarray,
     edge_data: np.ndarray
-):
+)-->Tuple[np.ndarray]:
+    '''
+    Duplicates all edges in an edge index but reverses the direction. Reverse edge attributes copied from the initial edge.This is a simple utility function used within this script - for general used we recommend using the Pytroch Geomtric function to_undirected which won't duplicate self-edges which already exist. 
+    
+    :param edge_index: (2,M) shape array of edge indices.
+    :type edge_index: np.ndarray
+    :param edge_attr: (M,K) shape edge attribute array
+    :type edge_attr: np.ndarray
+    '''
+    
     edge_index = np.append(edge_index,
                            edge_index[::-1,:],
                            axis = 1
@@ -218,19 +228,31 @@ def add_cistrans_interactions(
 
 def add_vector_edge_weighted_self_loops(
     edge_index: np.ndarray, 
-    edge_data: np.ndarray,
+    edge_attr: np.ndarray,
     nodes: np.ndarray,
     fill_value: Optional[int] = 1
-):
+)--> Tuple(np.ndarray):
+    '''
+    Given some edge index and edge data, adds in self-loops to all nodes which aren't already self-looped. For the added self loops, if any exist then all further self-loop features are the mean of the existing self-loop features. In the case that no self loops exist, users must specify a fill value. Added self loops are then given features of the same shape as other edge features but with the given fill value.
+    
+    :param edge_index: (2,M) shape array of edge indices.
+    :type edge_index: np.ndarray
+    :param edge_attr: (M,K) shape edge attribute array
+    :type edge_attr: np.ndarray
+    :param nodes: Array detailing the node indices. Note that nodes don't have to be zero indexed but are assumed to be contiguous. i.e. the set [2,3,4,5] is alllowed but the set [2,3,6,7] is not. We plan to allow for any node set in a future update.
+    :type nodes: np.ndarray
+    :param fill_value: Value with which to fill self-loop feature vectors in the case of no existing self-loops.
+    :type fill_value: Optional[int]
+    '''
     idxs = np.diff(edge_index, axis = 0) == 0
     idxs = idxs[0,:]
     
     if np.sum(idxs)>0:
-        vec_add = np.mean(edge_data[idxs,:],
+        vec_add = np.mean(edge_attr[idxs,:],
                           axis = 0)
         already_looped = edge_index[0,idxs].astype('int32')-int(np.min(nodes))
     else:
-        vec_add = np.full(edge_data.shape[1],
+        vec_add = np.full(edge_attr.shape[1],
                           fill_value)
         already_looped = np.array([],'int32')
         
@@ -245,9 +267,9 @@ def add_vector_edge_weighted_self_loops(
         ea_add = np.stack([vec_add for i in np.arange(notlooped.shape[0])])
         
         edge_index = np.append(edge_index, ei_add, axis = 1)
-        edge_data = np.append(edge_data, ea_add, axis = 0)
+        edge_attr = np.append(edge_attr, ea_add, axis = 0)
     
-    return edge_index.astype('int'), edge_data
+    return edge_index.astype('int'), edge_attr
 
 
 def add_backbone_interactions(
@@ -256,7 +278,21 @@ def add_backbone_interactions(
     nodes: np.ndarray,
     record_backbone_interactions: Optional[bool] = True,
     add_self_loops: Optional[bool] = True
-):
+)-->Tuple[np.ndarray]:
+    '''
+    Given some edge index and edge data and node information, adds in backbone interactions corresponding to the polymer structure of chromatin. This is done by assigning edges/edge features. to consecutive bins where none exist.
+    
+    :param edge_index: (2,M) shape array of edge indices.
+    :type edge_index: np.ndarray
+    :param edge_attr: (M,K) shape edge attribute array
+    :type edge_attr: np.ndarray
+    :param nodes: Array detailing the node indices. Note that nodes don't have to be zero indexed but are assumed to be contiguous. i.e. the set [2,3,4,5] is alllowed but the set [2,3,6,7] is not. We plan to allow for any node set in a future update.
+    :type nodes: np.ndarray
+    :param record_backbone_interactions: Optionally, a boolean edge feature detailing whether that edge is a backbone interaction of not can be added to the edge feature array. If not then backbone interactions are simply added based on the mean edge features of other backbone interactions present within the edge_index.
+    :type record_backbone_interactions: Optional[bool]
+    :param self_loops: Boolean determining whether to add self-loops or not
+    :type self_loops: Optional[bool]
+    '''
     #add in self loops that aren't present
     if add_self_loops:
         edge_index, edge_data = add_vector_edge_weighted_self_loops(edge_index, 
@@ -351,6 +387,18 @@ def _single_clr_edge_and_node_info_from_slices(
     balance: Optional[bool] = True, 
     join: Optional[bool] = False
 ):
+    '''
+    Given some cooler and a dictionary of slices (with chromosomes as keys), return the submatrices retrieved from these slices within the Hi-C map. Submatrices are returned in sparse COO format with an edge_idxs dictionary, an edge_attrs dictionary and a node_info dictionary. Optionally users can balance the Hi-C matrix before retrieval of matrix information. SInce multiple chromosomes and slices per chromosome can be supplied, user may optionally join regions into one larger region consisting of the given slices concatenated together. This function does not actually do the joining procedure since the passed slices may not be disjoint.  
+    
+    :param cooler: Cooler file object
+    :type edge_index: cooler.Cooler
+    :param slices: Dictionary with chromosomes as keys and lists of slices as values. Multiple slices are allowed per chromosome.
+    :type slices: Dict[str,List[np.ndarray]]
+    :param balance: Whether to perform matrix balancing on the Hi-C matrix before retrieving individual slices.
+    :type balance: Optional[bool]
+    :param join: Boolean determining whether to retrieve Hi-C martrix information corresponding to the interface between slices. This is only recommended if slices are disjoint since the interface isn't well defined if slices aren't disjoint.
+    :type join: Optional[bool]
+    '''
     # Iterate through slices, adding in edge indexes and edge attributes
     edge_idxs = {}
     edge_attrs = {}
@@ -415,6 +463,18 @@ def _single_clr_edge_and_node_info_from_sites(
     balance: Optional[bool] = True, 
     join: Optional[bool] = False
 ):
+    '''
+    Given some cooler and a dictionary of sites (with chromosomes as keys), return the submatrices retrieved from these slices within the Hi-C map. Submatrices are returned in sparse COO format with an edge_idxs dictionary, an edge_attrs dictionary and a node_info dictionary. Optionally users can balance the Hi-C matrix before retrieval of matrix information. SInce multiple chromosomes and slices per chromosome can be supplied, user may optionally join regions into one larger region consisting of the given slices concatenated together. This function does not actually do the joining procedure since the passed slices may not be disjoint.  
+    
+    :param cooler: Cooler file object
+    :type edge_index: cooler.Cooler
+    :param slices: Dictionary with chromosomes as keys and lists of sites as values. Multiple sites are allowed per chromosome.
+    :type slices: Dict[str,List[np.ndarray]]
+    :param balance: Whether to perform matrix balancing on the Hi-C matrix before retrieving individual slices.
+    :type balance: Optional[bool]
+    :param join: Boolean determining whether to retrieve Hi-C martrix information corresponding to the interface between slices. This is only recommended if slices are disjoint since the interface isn't well defined if slices aren't disjoint.
+    :type join: Optional[bool]
+    '''
     # Iterate through slices, adding in edge indexes and edge attributes
     edge_idxs = {}
     edge_attrs = {}
@@ -482,8 +542,14 @@ def join_edge_attrs(
     graph_nodes: List[np.ndarray]
 )->List[np.ndarray]:
     '''
-    Given some list of edge index arrays and some 1D attributes for those edges, creates a new edge index array
-    where the data for each edge is a vector containing the relevant data from the input list of edge attributes
+    Given some list of K edge index arrays and some 1D attributes for those edges, creates a single new edge index array where the data for each edge is a K-vector containing the relevant data from the input list of edge attributes. If an edge exists in edge index set i but not in  edge index set j, the vector entry for that edge will contain a 0 at the jth entry. 
+    
+    :param edge_idxs: List of (2,M_i) edge index arrays where M_i can vary between each array
+    :type edge_idxs: List[np.ndarray]
+    :param edge_attrs: List of (M_i,1) edge attribute arrays where M_i can vary between each array
+    :type edge_attrs: List[np.ndarray]
+    :type graph_nodes: List of (M,) shape arrays detailing the graph nodes. These can optionally be contiguous or not but graphs are assumed to have the same number of nodes. Essentially any edge_index can then be provided per graph and the function uses the node mapping to 'rename' the nodes as [0,1,2,...,M]
+    
     '''
     if len(edge_idxs)==1:
         return [edge_idxs[0], edge_attrs[0]]
@@ -532,6 +598,9 @@ def join_multi_clr_graphs(
     record_cistrans_interactions: Optional[bool] = False,
     add_self_loops: Optional[bool] = True
 ):
+    '''
+    TODO
+    '''
     edge_idxs = {}
     edge_attrs = {}
     for chrom1 in clr_edge_idxs[0]:
@@ -597,6 +666,7 @@ def from_regions(
 ) -> list:
     """
     Computes a HiC Graph from a list of cooler files
+    
     :param contacts: list of cooler files generated from Hi-C experiments. Cooler files don't have to be indexed the same but they do have to all contain the chromosomes and regions being probed.
     :param regions: Dictionary specifying chromosomes and regions to collect data over. Dictionary should contain chromosomes as keys and 2D integer numpy arrays as values.
     :param names: Dictionary specifying the name associated with each region
@@ -752,7 +822,8 @@ def from_sites(
     chromosomes: Optional[list] = ["chr{}".format(str(i+1)) for i in np.arange(19)] + ['chrX']
 ) -> list:
     """
-    Computes a HiC Graph from a list of cooler files
+    Computes a HiC Graph from a list of cooler files and some disjoint sites
+    
     :param contacts: list of cooler files generated from Hi-C experiments. Cooler files don't have to be indexed the same but they do have to all contain the chromosomes and regions being probed.
     :param regions: Dictionary specifying chromosomes and regions to collect data over. Dictionary should contain chromosomes as keys and 2D integer numpy arrays as values.
     :param names: Dictionary specifying the name associated with each region
@@ -882,13 +953,27 @@ def from_sites(
     
     
 def add_binned_data_to_graph(
-    graph: dict,
-    binned_data: str
+    graph: Dict,
+    binned_data: str,
+    sep: str = "\t",
+    index_col = 0
 ) -> None:
+    '''
+    Given a graph encoded as a dictionary (such as that made from the output of from_regions or from_sites) and binned data within a pandas dataframe (such as that made using the Datatrack_creation submodule), populates the graph node features with the appropriate binned data. 
+    
+    :param graph: Dictionary detailing a graph made either either from_regions or from_sites
+    :type graph: Dict
+    :param binned_data: Path to binned data such as that created using the Datatrack_creation module
+    :type binned_data: str
+    :param sep: Separation character within the binned data file. Defaults to "\t"
+    :type sep: str
+    :param index_col: Index column within the binned data file. Defaults to 0 
+    
+    '''
     idxs = graph['cooler_idxs']
     data = pd.read_csv(binned_data, 
-                       sep = "\t",
-                       index_col = 0
+                       sep = sep,
+                       index_col = index_col
                       )
     
     if isinstance(graph['x'], np.ndarray):
@@ -900,23 +985,26 @@ def add_binned_data_to_graph(
     
 def add_binned_data_to_graphlist(
     graph_list: dict,
-    binned_data: str
+    binned_data: str,
+    sep: str = "\t",
+    index_col = 0
 ) -> None:
+    '''
+    Given a graph encoded as a dictionary (such as that made from the output of from_regions or from_sites) and binned data within a pandas dataframe (such as that made using the Datatrack_creation submodule), populates the graph node features with the appropriate binned data. 
+    
+    :param graph_list: List of dictionaries detailing a graph made either either from_regions or from_sites
+    :type graph: Dict
+    :param binned_data: Path to binned data such as that created using the Datatrack_creation module
+    :type binned_data: str
+    :param sep: Separation character within the binned data file. Defaults to "\t"
+    :type sep: str
+    :param index_col: Index column within the binned data file. Defaults to 0 
+    
+    '''
     for graph in graph_list:
         add_binned_data_to_graph(graph, 
-                                 binned_data)
+                                 binned_data,
+                                 sep,
+                                 index_col
+                                )
 
-    
-
-
-if __name__ == "__main__":
-    regions = {
-        "chr1": np.array([[1, 10000], [11000, 20000]]),
-        "chr2": np.array([[1, 10000], [11000, 20000]]),
-        "chr3": np.array([[1, 10000], [11000, 20000]]),
-    }
-
-    compute_nx_graph_from_regions(
-        "Dixon2012-H1hESC-HindIII-allreps-filtered.1000kb.cool",
-        regions=regions,
-    )

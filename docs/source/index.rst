@@ -26,7 +26,8 @@ This package provides
    :maxdepth: 2
    :caption: Package Reference:
    
-   modules/GrapHiC.datatrack_creation
+   modules/Datatrack_creation
+   modules/Graph_creation
 
 .. modules/GrapHiC.graph_creation
    modules/GrapHiC.datatrack_creation
