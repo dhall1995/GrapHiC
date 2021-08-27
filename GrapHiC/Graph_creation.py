@@ -670,7 +670,7 @@ def from_regions(
     :param contacts: list of cooler files generated from Hi-C experiments. Cooler files don't have to be indexed the same but they do have to all contain the chromosomes and regions being probed.
     :param regions: Dictionary specifying chromosomes and regions to collect data over. Dictionary should contain chromosomes as keys and 2D integer numpy arrays as values.
     :param names: Dictionary specifying the name associated with each region
-    :params balance: Optional boolean to determine whether returned weights should be balanced or not.
+    :param balance: Optional boolean to determine whether returned weights should be balanced or not.
     :param join: Optional boolean to determine whether trans (inter-region) interactions are included. If this option is True then we automatically compose the subgraphs into one big graph
     :param force_disjoint: Optional boolean to determine whether to force the input regions to be disjoint regions.
     :param backbone: Optional boolean to identify edges which make up the chromatin backbone and include this as an edge feature.
@@ -678,7 +678,7 @@ def from_regions(
     :param record_backbone_interactions: Optional boolean to explicitely record backbone interactions within the edge attributes
     :param record_node_chromosome_as_onehot: Optional boolean to explicitely record node chromosome as a feature vector with chromosomes one hot encoded.
     :param chromosomes: Optional list of chromosomes with which to perform the one-hot encoding
-    :return: edge index object, edge attributes and node assignments by chromosome 
+    :return: python dictionary in the style of a Pytorch Geometric data object but with additional parameters detailing the cooler bins assigned to each node. If used choose the join==False option then a python dictionary is returned detailing the graph structure per submitted region.  
     """
     if join and not force_disjoint:
         print("Can't join together sub-graphs when force_disjoint=False. Risks ambiguous node and edge assignment. Setting force_disjoint = True")
@@ -827,7 +827,7 @@ def from_sites(
     :param contacts: list of cooler files generated from Hi-C experiments. Cooler files don't have to be indexed the same but they do have to all contain the chromosomes and regions being probed.
     :param regions: Dictionary specifying chromosomes and regions to collect data over. Dictionary should contain chromosomes as keys and 2D integer numpy arrays as values.
     :param names: Dictionary specifying the name associated with each region
-    :params balance: Optional boolean to determine whether returned weights should be balanced or not.
+    :param balance: Optional boolean to determine whether returned weights should be balanced or not.
     :param join: Optional boolean to determine whether trans (inter-region) interactions are included. If this option is True then we automatically compose the subgraphs into one big graph
     :param force_disjoint: Optional boolean to determine whether to force the input regions to be disjoint regions.
     :param backbone: Optional boolean to identify edges which make up the chromatin backbone and include this as an edge feature.
@@ -835,7 +835,7 @@ def from_sites(
     :param record_backbone_interactions: Optional boolean to explicitely record backbone interactions within the edge attributes
     :param record_node_chromosome_as_onehot: Optional boolean to explicitely record node chromosome as a feature vector with chromosomes one hot encoded.
     :param chromosomes: Optional list of chromosomes with which to perform the one-hot encoding
-    :return: edge index object, edge attributes and node assignments by chromosome 
+    :return: python dictionary in the style of a Pytorch Geometric data object but with additional parameters detailing the cooler bins assigned to each node. If used choose the join==False option then a python dictionary is returned detailing the graph structure per submitted region.
     """    
     if isinstance(contacts,str):
         contacts = [contacts]
@@ -996,7 +996,7 @@ def add_binned_data_to_graphlist(
     :type graph: Dict
     :param binned_data: Path to binned data such as that created using the Datatrack_creation module
     :type binned_data: str
-    :param sep: Separation character within the binned data file. Defaults to "\t"
+    :param sep: Separation character within the binned data file. Defaults to "\\t"
     :type sep: str
     :param index_col: Index column within the binned data file. Defaults to 0 
     
