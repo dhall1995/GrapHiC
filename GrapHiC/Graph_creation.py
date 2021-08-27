@@ -183,7 +183,7 @@ def nx_graph_from_regions(
 def make_edges_bidirectional(
     edge_index: np.ndarray,
     edge_data: np.ndarray
-)-->Tuple[np.ndarray]:
+)->Tuple[np.ndarray]:
     '''
     Duplicates all edges in an edge index but reverses the direction. Reverse edge attributes copied from the initial edge.This is a simple utility function used within this script - for general used we recommend using the Pytroch Geomtric function to_undirected which won't duplicate self-edges which already exist. 
     
@@ -231,7 +231,7 @@ def add_vector_edge_weighted_self_loops(
     edge_attr: np.ndarray,
     nodes: np.ndarray,
     fill_value: Optional[int] = 1
-)--> Tuple(np.ndarray):
+)-> Tuple(np.ndarray):
     '''
     Given some edge index and edge data, adds in self-loops to all nodes which aren't already self-looped. For the added self loops, if any exist then all further self-loop features are the mean of the existing self-loop features. In the case that no self loops exist, users must specify a fill value. Added self loops are then given features of the same shape as other edge features but with the given fill value.
     
@@ -278,7 +278,7 @@ def add_backbone_interactions(
     nodes: np.ndarray,
     record_backbone_interactions: Optional[bool] = True,
     add_self_loops: Optional[bool] = True
-)-->Tuple[np.ndarray]:
+)->Tuple[np.ndarray]:
     '''
     Given some edge index and edge data and node information, adds in backbone interactions corresponding to the polymer structure of chromatin. This is done by assigning edges/edge features. to consecutive bins where none exist.
     
