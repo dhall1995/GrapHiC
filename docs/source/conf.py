@@ -60,4 +60,4 @@ html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
 
 # Dependency on C-extension modules break ReadTheDocs without the mock import.
-autodoc_mock_imports = ["numpy", "cython", "pandas", "networkx", "cooler", "Cython","GrapHiC.utils.dtrack_utils"]
+autodoc_mock_imports = ["GrapHiC.utils.dtrack_utils"]
